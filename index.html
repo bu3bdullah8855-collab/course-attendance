@@ -329,10 +329,53 @@
   .lock-error{ color:#d9534f; font-size:13px; margin:8px 0 0 0; min-height:16px; }
   .lock-hint{ font-size:12px; color:var(--muted); margin-top:10px; }
 
+  .tab-nav{
+    display:flex;
+    gap:6px;
+    border-bottom:1px solid var(--border);
+    margin-bottom:16px;
+  }
+  .tab-btn{
+    background:transparent;
+    border:none;
+    border-bottom:3px solid transparent;
+    border-radius:0;
+    padding:10px 16px;
+    font-size:14px;
+    font-weight:600;
+    color:var(--muted);
+  }
+  .tab-btn.active{
+    color:var(--gold-dark);
+    border-bottom-color:var(--gold);
+  }
+  .tab-btn:hover{ opacity:1; color:var(--text); }
+  .tab-content{ display:none; }
+  .tab-content.active{ display:block; }
+  .readonly-cell{
+    text-align:right;
+    padding:6px 8px;
+    min-width:100px;
+    max-width:200px;
+  }
+  .number-cell{
+    text-align:center;
+    padding:4px;
+    min-width:80px;
+  }
+  .number-cell input{
+    width:70px;
+    text-align:center;
+    padding:5px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    font-size:13px;
+  }
+
   @media print{
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
-    .toolbar, .section, .meta-info, .lock-overlay, #syncNote{display:none !important;}
+    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav{display:none !important;}
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
     .container{box-shadow:none; padding:0; max-width:none;}
@@ -371,6 +414,16 @@
 <div class="container" id="appContainer" style="display:none;">
   <h1>سجل حضور الدورة</h1>
 
+  <div class="tab-nav">
+    <button class="tab-btn active" id="tabBtnAttendance" data-tab="tabAttendance">سجل الحضور</button>
+    <button class="tab-btn" id="tabBtnExams" data-tab="tabExams">نتائج الاختبارات</button>
+    <button class="tab-btn" id="tabBtnSummary" data-tab="tabSummary">الملخص النهائي</button>
+  </div>
+
+  <div class="print-only" id="printMeta"></div>
+
+  <div class="tab-content active" id="tabAttendance">
+
   <div class="meta-info">
     <div class="field">
       <label>اسم الدورة</label>
@@ -385,8 +438,6 @@
       <input type="text" id="trainerName" placeholder="اسم المدرب">
     </div>
   </div>
-
-  <div class="print-only" id="printMeta"></div>
 
   <div class="toolbar">
     <button class="btn-gold" id="addParticipantBtn">+ إضافة مشارك</button>
@@ -436,6 +487,35 @@
   </div>
 
   <p class="save-note">يتم حفظ البيانات تلقائيًا على هذا الجهاز</p>
+  </div>
+
+  <div class="tab-content" id="tabExams">
+    <div class="toolbar">
+      <button class="btn-outline" id="manageExamColumnsBtn">إدارة أعمدة الاختبارات</button>
+    </div>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">أسماء المشاركين هنا مرتبطة تلقائيًا بجدول "سجل الحضور" — أضف أو احذف مشاركًا من هناك.</p>
+    <div class="table-wrap">
+      <table id="examsTable">
+        <thead>
+          <tr id="examsHeaderRow"></tr>
+        </thead>
+        <tbody id="examsTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-content" id="tabSummary">
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">النقاط النهائية = مجموع الاختبارات + (الدرجة الأساسية − مجموع خصم الحضور)</p>
+    <div class="table-wrap">
+      <table id="summaryTable">
+        <thead>
+          <tr id="summaryHeaderRow"></tr>
+        </thead>
+        <tbody id="summaryTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
 <div id="modalRoot"></div>
@@ -480,6 +560,7 @@
         { id: nameColId, label: 'اسم المشارك', type: 'name', deletable: false },
         { id: uid(), label: 'الرتبة', type: 'text', deletable: true }
       ],
+      examColumns: [],
       participants: []
     };
   }
@@ -502,6 +583,10 @@
       return defaultStorage();
     }
     if(!raw.dailyRecords) raw.dailyRecords = {};
+    if(!raw.working.examColumns) raw.working.examColumns = [];
+    raw.working.participants.forEach(p => {
+      if(!p.examScores) p.examScores = {};
+    });
     return raw;
   }
 
@@ -580,6 +665,21 @@
     return total;
   }
 
+  function computeExamTotal(p){
+    let total = 0;
+    W().examColumns.forEach(col => {
+      const val = p.examScores ? p.examScores[col.id] : null;
+      total += Number(val) || 0;
+    });
+    return total;
+  }
+
+  function computeFinalOverall(p){
+    const examTotal = computeExamTotal(p);
+    const attendanceFinal = Number(W().baseScore) - computeDeduction(p);
+    return examTotal + attendanceFinal;
+  }
+
   function escapeHtml(str){
     const div = document.createElement('div');
     div.textContent = str == null ? '' : String(str);
@@ -653,6 +753,9 @@
     const actionsTh = makeTh('إجراءات');
     actionsTh.className = 'actions-col';
     headerRow.appendChild(actionsTh);
+
+    if(document.getElementById('examsHeaderRow')) renderExamsHeader();
+    if(document.getElementById('summaryHeaderRow')) renderSummaryHeader();
   }
 
   let dragSourceId = null;
@@ -681,6 +784,8 @@
           input.addEventListener('input', (e) => {
             p.name = e.target.value;
             saveStore();
+            if(document.getElementById('examsTableBody')) renderExamsBody();
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
         } else {
           input.value = (p.extra && p.extra[col.id] != null) ? p.extra[col.id] : '';
@@ -688,6 +793,8 @@
             if(!p.extra) p.extra = {};
             p.extra[col.id] = e.target.value;
             saveStore();
+            if(document.getElementById('examsTableBody')) renderExamsBody();
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
         }
         td.appendChild(input);
@@ -753,6 +860,9 @@
 
       tbody.appendChild(tr);
     });
+
+    if(document.getElementById('examsTableBody')) renderExamsBody();
+    if(document.getElementById('summaryTableBody')) renderSummaryBody();
   }
 
   function reorderByDrag(sourceId, targetId){
@@ -792,8 +902,9 @@
   }
 
   function addParticipant(){
-    const p = { id: uid(), name: '', extra: {}, sessions: emptySessions() };
+    const p = { id: uid(), name: '', extra: {}, sessions: emptySessions(), examScores: {} };
     W().columns.forEach(col => { if(col.type === 'text') p.extra[col.id] = ''; });
+    W().examColumns.forEach(col => { p.examScores[col.id] = ''; });
     W().participants.push(p);
     saveStore();
     renderTable();
@@ -928,6 +1039,243 @@
     saveStore();
     renderStatusSettings();
     renderLegend();
+  }
+
+  // ---------- Exams tab ----------
+
+  function renderExamsHeader(){
+    const headerRow = document.getElementById('examsHeaderRow');
+    if(!headerRow) return;
+    headerRow.innerHTML = '';
+    headerRow.appendChild(makeTh('#'));
+    W().columns.forEach(col => {
+      const th = makeTh(col.label);
+      th.style.textAlign = 'right';
+      headerRow.appendChild(th);
+    });
+    W().examColumns.forEach(col => {
+      headerRow.appendChild(makeTh(col.label));
+    });
+    headerRow.appendChild(makeTh('مجموع الاختبارات'));
+  }
+
+  function renderExamsBody(){
+    const tbody = document.getElementById('examsTableBody');
+    if(!tbody) return;
+    tbody.innerHTML = '';
+    W().participants.forEach((p, index) => {
+      const tr = document.createElement('tr');
+
+      const tdNum = document.createElement('td');
+      tdNum.className = 'row-num';
+      tdNum.textContent = index + 1;
+      tr.appendChild(tdNum);
+
+      W().columns.forEach(col => {
+        const td = document.createElement('td');
+        td.className = 'readonly-cell';
+        td.textContent = col.type === 'name' ? (p.name || '') : ((p.extra && p.extra[col.id]) || '');
+        tr.appendChild(td);
+      });
+
+      W().examColumns.forEach(col => {
+        const td = document.createElement('td');
+        td.className = 'number-cell';
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = '0.1';
+        input.value = (p.examScores && p.examScores[col.id] != null) ? p.examScores[col.id] : '';
+        input.addEventListener('input', (e) => {
+          if(!p.examScores) p.examScores = {};
+          p.examScores[col.id] = e.target.value;
+          saveStore();
+          const totalCell = tr.querySelector('.exam-total-cell');
+          if(totalCell) totalCell.textContent = computeExamTotal(p);
+          if(document.getElementById('summaryTableBody')) renderSummaryBody();
+        });
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+
+      const tdTotal = document.createElement('td');
+      tdTotal.className = 'final-score exam-total-cell';
+      tdTotal.textContent = computeExamTotal(p);
+      tr.appendChild(tdTotal);
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function openExamColumnManager(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'إدارة أعمدة الاختبارات';
+    box.appendChild(h3);
+
+    const list = document.createElement('div');
+    list.className = 'column-list';
+    box.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      if(W().examColumns.length === 0){
+        const note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = 'لا توجد أعمدة اختبارات بعد. أضف أول اختبار أدناه.';
+        list.appendChild(note);
+      }
+      W().examColumns.forEach((col, idx) => {
+        const row = document.createElement('div');
+        row.className = 'column-row';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = col.label;
+        nameInput.addEventListener('input', (e) => {
+          col.label = e.target.value;
+          saveStore();
+          renderExamsHeader();
+        });
+
+        const upBtn = document.createElement('button');
+        upBtn.className = 'btn-outline btn-small';
+        upBtn.textContent = '→ تقديم';
+        upBtn.addEventListener('click', () => {
+          if(idx === 0) return;
+          const arr = W().examColumns;
+          [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+          saveStore();
+          renderExamsHeader(); renderExamsBody(); renderList();
+        });
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'btn-outline btn-small';
+        downBtn.textContent = '← تأخير';
+        downBtn.addEventListener('click', () => {
+          const arr = W().examColumns;
+          if(idx === arr.length - 1) return;
+          [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+          saveStore();
+          renderExamsHeader(); renderExamsBody(); renderList();
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-danger btn-small';
+        delBtn.textContent = 'حذف الاختبار';
+        delBtn.addEventListener('click', () => {
+          showConfirm('سيتم حذف هذا الاختبار ونتائجه لكل المشاركين. هل أنت متأكد؟', () => {
+            W().examColumns = W().examColumns.filter(c => c.id !== col.id);
+            W().participants.forEach(p => { if(p.examScores) delete p.examScores[col.id]; });
+            saveStore();
+            renderExamsHeader(); renderExamsBody(); renderSummaryBody(); renderList();
+          });
+        });
+
+        row.appendChild(nameInput);
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
+        row.appendChild(delBtn);
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-column-row';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = 'اسم الاختبار الجديد';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn-gold btn-small';
+    addBtn.textContent = 'إضافة اختبار';
+    addBtn.addEventListener('click', () => {
+      const label = addInput.value.trim();
+      if(!label) return;
+      const newCol = { id: uid(), label: label, deletable: true };
+      W().examColumns.push(newCol);
+      W().participants.forEach(p => { if(!p.examScores) p.examScores = {}; p.examScores[newCol.id] = ''; });
+      saveStore();
+      addInput.value = '';
+      renderExamsHeader(); renderExamsBody(); renderList();
+    });
+    addRow.appendChild(addInput);
+    addRow.appendChild(addBtn);
+    box.appendChild(addRow);
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  // ---------- Summary tab ----------
+
+  function renderSummaryHeader(){
+    const headerRow = document.getElementById('summaryHeaderRow');
+    if(!headerRow) return;
+    headerRow.innerHTML = '';
+    headerRow.appendChild(makeTh('#'));
+    W().columns.forEach(col => {
+      const th = makeTh(col.label);
+      th.style.textAlign = 'right';
+      headerRow.appendChild(th);
+    });
+    headerRow.appendChild(makeTh('مجموع الاختبارات'));
+    headerRow.appendChild(makeTh('مجموع الخصم'));
+    headerRow.appendChild(makeTh('النقاط النهائية'));
+  }
+
+  function renderSummaryBody(){
+    const tbody = document.getElementById('summaryTableBody');
+    if(!tbody) return;
+    tbody.innerHTML = '';
+    W().participants.forEach((p, index) => {
+      const tr = document.createElement('tr');
+
+      const tdNum = document.createElement('td');
+      tdNum.className = 'row-num';
+      tdNum.textContent = index + 1;
+      tr.appendChild(tdNum);
+
+      W().columns.forEach(col => {
+        const td = document.createElement('td');
+        td.className = 'readonly-cell';
+        td.textContent = col.type === 'name' ? (p.name || '') : ((p.extra && p.extra[col.id]) || '');
+        tr.appendChild(td);
+      });
+
+      const examTotal = computeExamTotal(p);
+      const deduction = computeDeduction(p);
+      const finalOverall = computeFinalOverall(p);
+
+      const tdExam = document.createElement('td');
+      tdExam.textContent = examTotal;
+      tr.appendChild(tdExam);
+
+      const tdDeduct = document.createElement('td');
+      tdDeduct.textContent = deduction;
+      tr.appendChild(tdDeduct);
+
+      const tdFinal = document.createElement('td');
+      tdFinal.className = 'final-score';
+      tdFinal.textContent = finalOverall;
+      tr.appendChild(tdFinal);
+
+      tbody.appendChild(tr);
+    });
   }
 
   function openColumnManager(){
@@ -1069,6 +1417,8 @@
     }
   }
 
+  let dailySortNewestFirst = true;
+
   function openDailyRecords(){
     const root = document.getElementById('modalRoot');
     root.innerHTML = '';
@@ -1081,13 +1431,32 @@
     h3.textContent = 'السجل اليومي';
     box.appendChild(h3);
 
+    const sortRow = document.createElement('div');
+    sortRow.style.textAlign = 'left';
+    sortRow.style.marginBottom = '10px';
+    const sortBtn = document.createElement('button');
+    sortBtn.className = 'btn-outline btn-small';
+    sortRow.appendChild(sortBtn);
+    box.appendChild(sortRow);
+
     const list = document.createElement('div');
     list.className = 'daily-list';
     box.appendChild(list);
 
+    function updateSortBtnLabel(){
+      sortBtn.textContent = dailySortNewestFirst ? '↓ الأحدث أولًا' : '↑ الأقدم أولًا';
+    }
+    sortBtn.addEventListener('click', () => {
+      dailySortNewestFirst = !dailySortNewestFirst;
+      updateSortBtnLabel();
+      renderList();
+    });
+    updateSortBtnLabel();
+
     function renderList(){
       list.innerHTML = '';
-      const dates = Object.keys(store.dailyRecords).sort().reverse();
+      let dates = Object.keys(store.dailyRecords).sort();
+      if(dailySortNewestFirst) dates = dates.reverse();
       if(dates.length === 0){
         const note = document.createElement('div');
         note.className = 'empty-note';
@@ -1115,6 +1484,8 @@
         restoreBtn.addEventListener('click', () => {
           showConfirm('سيتم استبدال بيانات الجدول الحالي ببيانات هذا اليوم. هل أنت متأكد؟', () => {
             store.working = deepClone(rec.snapshot);
+            if(!store.working.examColumns) store.working.examColumns = [];
+            store.working.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
             saveStore();
             renderAll();
             root.innerHTML = '';
@@ -1182,8 +1553,7 @@
         return;
       }
       showConfirm('سيتم استبدال جميع البيانات الحالية والسجل اليومي ببيانات هذا الملف. هل أنت متأكد؟', () => {
-        store = parsed;
-        if(!store.dailyRecords) store.dailyRecords = {};
+        store = normalizeStore(parsed);
         saveStore();
         renderAll();
         showMessage('تم استيراد النسخة الاحتياطية بنجاح.');
@@ -1303,6 +1673,7 @@
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
   document.getElementById('manageColumnsBtn').addEventListener('click', openColumnManager);
+  document.getElementById('manageExamColumnsBtn').addEventListener('click', openExamColumnManager);
   document.getElementById('saveTodayBtn').addEventListener('click', saveToday);
   document.getElementById('dailyRecordsBtn').addEventListener('click', openDailyRecords);
   document.getElementById('backupBtn').addEventListener('click', downloadBackup);
@@ -1324,6 +1695,15 @@
       store.working = defaultWorkingState();
       saveStore();
       renderAll();
+    });
+  });
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
     });
   });
 
