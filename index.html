@@ -384,7 +384,7 @@
   @media print{
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
-    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint, #totalCourseGradeRow{display:none !important;}
+    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint{display:none !important;}
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
     .container{box-shadow:none; padding:0; max-width:none;}
@@ -520,11 +520,7 @@
   </div>
 
   <div class="tab-content" id="tabSummary">
-    <div class="base-score-row" id="totalCourseGradeRow">
-      <label>الدرجة الكلية للدورة:</label>
-      <input type="number" id="totalCourseGradeInput" value="1000">
-    </div>
-    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">النقاط النهائية = مجموع الاختبارات + (الدرجة الكلية للدورة − مجموع خصم الحضور)</p>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (النقاط النهائية في سجل الحضور) — مرتبة من الأعلى إلى الأقل</p>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -707,8 +703,8 @@
 
   function computeFinalOverall(p){
     const examTotal = computeExamTotal(p);
-    const attendancePart = Number(W().totalCourseGrade) - computeDeduction(p);
-    return examTotal + attendancePart;
+    const attendanceFinal = Number(W().baseScore) - computeDeduction(p);
+    return examTotal + attendanceFinal;
   }
 
   function escapeHtml(str){
@@ -723,8 +719,6 @@
     document.getElementById('trainerName').value = W().trainerName || "";
     document.getElementById('courseSubject').value = W().subject || "";
     document.getElementById('baseScoreInput').value = W().baseScore;
-    const totalGradeInput = document.getElementById('totalCourseGradeInput');
-    if(totalGradeInput) totalGradeInput.value = W().totalCourseGrade;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
@@ -1281,14 +1275,20 @@
     });
     headerRow.appendChild(makeTh('مجموع الاختبارات'));
     headerRow.appendChild(makeTh('مجموع الخصم'));
-    headerRow.appendChild(makeTh('النقاط النهائية'));
+    headerRow.appendChild(makeTh('الدرجة'));
   }
 
   function renderSummaryBody(){
     const tbody = document.getElementById('summaryTableBody');
     if(!tbody) return;
     tbody.innerHTML = '';
-    W().participants.forEach((p, index) => {
+
+    const ranked = W().participants
+      .map(p => ({ p, final: computeFinalOverall(p) }))
+      .sort((a, b) => b.final - a.final);
+
+    ranked.forEach((item, index) => {
+      const p = item.p;
       const tr = document.createElement('tr');
 
       const tdNum = document.createElement('td');
@@ -1305,7 +1305,7 @@
 
       const examTotal = computeExamTotal(p);
       const deduction = computeDeduction(p);
-      const finalOverall = computeFinalOverall(p);
+      const finalOverall = item.final;
 
       const tdExam = document.createElement('td');
       tdExam.textContent = examTotal;
@@ -1723,12 +1723,6 @@
     saveStore();
     renderTable();
     renderMeta();
-  });
-  document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
-    W().totalCourseGrade = parseFloat(e.target.value) || 0;
-    saveStore();
-    renderMeta();
-    renderSummaryBody();
   });
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
