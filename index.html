@@ -774,8 +774,10 @@
     Object.keys(store.dailyRecords).forEach(date => {
       if(todayDate && date === todayDate) return;
       const rec = store.dailyRecords[date];
-      if(!rec || !rec.snapshot || !rec.snapshot.participants) return;
-      const match = rec.snapshot.participants.find(sp => sp.id === p.id);
+      if(!rec || !rec.snapshot) return;
+      const snapParticipants = rec.snapshot.participantsSessions || rec.snapshot.participants;
+      if(!snapParticipants) return;
+      const match = snapParticipants.find(sp => sp.id === p.id);
       if(match){
         total += computeDeductionFromSnapshot(match, rec.snapshot);
       }
@@ -1781,6 +1783,56 @@
     root.appendChild(overlay);
   }
 
+  function buildDaySnapshot(){
+    return {
+      courseName: W().courseName,
+      recordDate: W().recordDate,
+      trainerName: W().trainerName,
+      subject: W().subject,
+      baseScore: W().baseScore,
+      statuses: deepClone(W().statuses),
+      sessions: deepClone(W().sessions),
+      participantsSessions: W().participants.map(p => ({
+        id: p.id,
+        name: p.name,
+        sessions: deepClone(p.sessions)
+      }))
+    };
+  }
+
+  // Applies a saved day's attendance data (course meta, status/session
+  // definitions, and each participant's per-session status) onto the
+  // CURRENT working state, without touching the participant roster,
+  // extra columns, exam columns, or exam scores — those stay fixed
+  // regardless of which day you're viewing. Works with both the new lean
+  // snapshot format (participantsSessions) and older full-working
+  // snapshots saved before this change (participants).
+  function applyDaySnapshot(snapshot){
+    if(!snapshot) return;
+    W().courseName = snapshot.courseName || '';
+    W().recordDate = snapshot.recordDate || W().recordDate;
+    W().trainerName = snapshot.trainerName || '';
+    W().subject = snapshot.subject || '';
+    if(snapshot.baseScore != null) W().baseScore = snapshot.baseScore;
+    if(snapshot.statuses) W().statuses = deepClone(snapshot.statuses);
+    if(snapshot.sessions) W().sessions = deepClone(snapshot.sessions);
+
+    const snapParticipants = snapshot.participantsSessions || snapshot.participants || [];
+    const byId = {};
+    snapParticipants.forEach(sp => { byId[sp.id] = sp; });
+
+    W().participants.forEach(p => {
+      const match = byId[p.id];
+      if(!p.sessions) p.sessions = {};
+      if(match && match.sessions){
+        p.sessions = deepClone(match.sessions);
+      } else {
+        W().sessions.forEach(sc => { p.sessions[sc.id] = null; });
+      }
+      W().sessions.forEach(sc => { if(!(sc.id in p.sessions)) p.sessions[sc.id] = null; });
+    });
+  }
+
   function saveToday(){
     const date = W().recordDate;
     if(!date){
@@ -1790,7 +1842,7 @@
     const doSave = () => {
       store.dailyRecords[date] = {
         savedAt: new Date().toISOString(),
-        snapshot: deepClone(W())
+        snapshot: buildDaySnapshot()
       };
       saveStore();
       if(document.getElementById('summaryTableBody')) renderSummaryBody();
@@ -1858,7 +1910,8 @@
         const info = document.createElement('div');
         info.className = 'daily-info';
         const savedAtStr = new Date(rec.savedAt).toLocaleString('ar');
-        const count = rec.snapshot.participants ? rec.snapshot.participants.length : 0;
+        const snapPeople = rec.snapshot.participantsSessions || rec.snapshot.participants || [];
+        const count = snapPeople.length;
         info.innerHTML = `<strong>${escapeHtml(date)}</strong><br>عدد المشاركين: ${count}<br>وقت الحفظ: ${escapeHtml(savedAtStr)}`;
 
         const actions = document.createElement('div');
@@ -1868,8 +1921,8 @@
         restoreBtn.className = 'btn-gold btn-small';
         restoreBtn.textContent = 'استرجاع';
         restoreBtn.addEventListener('click', () => {
-          showConfirm('سيتم استبدال بيانات الجدول الحالي ببيانات هذا اليوم. هل أنت متأكد؟', () => {
-            store.working = backfillWorking(deepClone(rec.snapshot));
+          showConfirm('سيتم عرض حالات الحضور المسجلة في هذا اليوم، مع إبقاء قائمة المشاركين ونتائج الاختبارات كما هي حاليًا دون أي تغيير. هل أنت متأكد؟', () => {
+            applyDaySnapshot(rec.snapshot);
             saveStore();
             renderAll();
             root.innerHTML = '';
