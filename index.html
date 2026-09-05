@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>سجل حضور الدورة</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  :root{
+    --gold:#C9A84C;
+    --gold-dark:#a8873a;
+    --border:#e2e2e2;
+    --text:#222;
+    --muted:#777;
+    --bg:#ffffff;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Segoe UI", Tahoma, Arial, sans-serif;
+    background:#f7f7f5;
+    color:var(--text);
+    padding:16px;
+  }
+  .container{
+    max-width:1500px;
+    margin:0 auto;
+    background:var(--bg);
+    border-radius:10px;
+    padding:20px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.06);
+  }
+  h1{
+    text-align:center;
+    font-size:24px;
+    margin:0 0 16px 0;
+    color:var(--text);
+    border-bottom:3px solid var(--gold);
+    padding-bottom:12px;
+  }
+  .meta-info{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    justify-content:center;
+    margin-bottom:18px;
+  }
+  .meta-info .field{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:160px;
+    flex:1;
+  }
+  .meta-info label{
+    font-size:11px;
+    color:var(--muted);
+  }
+  .meta-info input{
+    padding:8px 10px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:14px;
+    width:100%;
+  }
+  .print-only{ display:none; }
+
+  .toolbar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:14px;
+  }
+  button{
+    cursor:pointer;
+    border:none;
+    border-radius:6px;
+    padding:8px 14px;
+    font-size:14px;
+    font-weight:600;
+    transition:opacity .15s;
+    font-family:inherit;
+  }
+  button:hover{opacity:0.85;}
+  .btn-gold{background:var(--gold); color:#fff;}
+  .btn-outline{background:#fff; border:1px solid var(--border); color:var(--text);}
+  .btn-danger{background:#fff; border:1px solid #d9534f; color:#d9534f;}
+  .btn-small{padding:4px 8px; font-size:12px;}
+
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:14px;
+    font-size:13px;
+    align-items:center;
+  }
+  .legend-item{display:flex; align-items:center; gap:5px;}
+  .legend-swatch{width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,0.1);}
+
+  .table-wrap{
+    overflow-x:auto;
+    border:1px solid var(--border);
+    border-radius:8px;
+  }
+  table{
+    border-collapse:collapse;
+    width:100%;
+    min-width:1000px;
+    font-size:13px;
+  }
+  th, td{
+    border:1px solid var(--border);
+    padding:6px;
+    text-align:center;
+    white-space:nowrap;
+  }
+  thead th{
+    background:#faf8f2;
+    position:sticky;
+    top:0;
+    font-size:12px;
+  }
+  th .session-header{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+  }
+  .text-cell{
+    text-align:right;
+    min-width:120px;
+    max-width:200px;
+    padding:4px 8px;
+  }
+  .text-cell input{
+    width:100%;
+    border:none;
+    background:transparent;
+    font-size:13px;
+    padding:4px;
+    text-align:right;
+  }
+  .text-cell input:focus{
+    outline:1px solid var(--gold);
+    background:#fffdf5;
+    border-radius:4px;
+  }
+  .status-cell{
+    cursor:pointer;
+    font-weight:600;
+    color:#333;
+    min-width:70px;
+    user-select:none;
+  }
+  .status-cell:hover{ filter:brightness(0.95); }
+  .row-actions{display:flex; gap:4px; justify-content:center;}
+  .final-score{font-weight:bold;}
+  .row-num{color:var(--muted); font-size:12px;}
+
+  .status-menu{
+    position:fixed;
+    z-index:999;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:0 4px 16px rgba(0,0,0,0.15);
+    padding:6px;
+    min-width:150px;
+    max-height:320px;
+    overflow-y:auto;
+  }
+  .status-menu-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .status-menu-item:hover{background:#f5f5f5;}
+  .status-menu-swatch{width:12px; height:12px; border-radius:3px; flex-shrink:0;}
+
+  .section{
+    margin-top:24px;
+    border-top:1px solid var(--border);
+    padding-top:16px;
+  }
+  .section h2{
+    font-size:16px;
+    margin:0 0 12px 0;
+    color:var(--gold-dark);
+  }
+  .section-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    cursor:pointer;
+    user-select:none;
+    padding:4px 0;
+  }
+  .section-header:hover{ opacity:0.8; }
+  .toggle-arrow{
+    font-size:14px;
+    color:var(--muted);
+    transition:transform .15s;
+  }
+  .toggle-arrow.open{ transform:rotate(90deg); }
+  .collapsible{
+    display:none;
+    margin-top:12px;
+  }
+  .collapsible.open{ display:block; }
+  .status-settings-list, .column-list, .daily-list{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .status-settings-row, .column-row, .daily-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    background:#fafafa;
+    padding:8px;
+    border-radius:6px;
+  }
+  .status-settings-row input[type="text"], .column-row input[type="text"]{
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    font-size:13px;
+    width:130px;
+  }
+  .status-settings-row input[type="number"]{
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:5px;
+    font-size:13px;
+    width:70px;
+  }
+  .status-settings-row input[type="color"]{
+    width:36px;
+    height:32px;
+    border:none;
+    padding:0;
+    border-radius:5px;
+    cursor:pointer;
+  }
+  .base-score-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:16px;
+  }
+  .base-score-row input{
+    width:90px;
+    padding:6px 8px;
+    border:1px solid var(--border);
+    border-radius:5px;
+  }
+  .save-note{
+    font-size:12px;
+    color:var(--muted);
+    text-align:center;
+    margin-top:10px;
+  }
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.45);
+    display:flex; align-items:center; justify-content:center;
+    z-index:1000;
+    padding:16px;
+  }
+  .modal-box{
+    background:#fff; border-radius:10px; padding:20px;
+    max-width:520px; width:100%;
+    max-height:85vh;
+    overflow-y:auto;
+    text-align:center;
+  }
+  .modal-box.wide{ max-width:640px; }
+  .modal-box h3{ margin:0 0 14px 0; font-size:17px; }
+  .modal-box p{margin:0 0 16px 0; font-size:14px;}
+  .modal-actions{display:flex; gap:10px; justify-content:center; margin-top:12px;}
+  .add-column-row{
+    display:flex; gap:8px; margin-top:10px;
+  }
+  .add-column-row input{
+    flex:1;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:6px;
+  }
+  .daily-row{ text-align:right; justify-content:space-between; }
+  .daily-row .daily-info{ font-size:12px; color:var(--muted); text-align:right; }
+  .daily-row .daily-actions{ display:flex; gap:6px; }
+  .empty-note{ color:var(--muted); font-size:13px; padding:10px 0; }
+  #importFileInput{ display:none; }
+
+  .lock-overlay{
+    position:fixed; inset:0;
+    background:#f7f7f5;
+    display:flex; align-items:center; justify-content:center;
+    z-index:2000;
+    padding:16px;
+  }
+  .lock-box{
+    background:#fff;
+    border-radius:10px;
+    padding:28px;
+    max-width:340px;
+    width:100%;
+    text-align:center;
+    box-shadow:0 2px 10px rgba(0,0,0,0.08);
+    border-top:3px solid var(--gold);
+  }
+  .lock-box input[type="password"], .lock-box input[type="text"]{
+    width:100%;
+    text-align:center;
+    letter-spacing:8px;
+    font-size:20px;
+    padding:10px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    margin-bottom:10px;
+  }
+  .lock-box button{ width:100%; margin-top:4px; }
+  .lock-error{ color:#d9534f; font-size:13px; margin:8px 0 0 0; min-height:16px; }
+  .lock-hint{ font-size:12px; color:var(--muted); margin-top:10px; }
+
+  @media print{
+    body{background:#fff; padding:0;}
+    .toolbar, .section, .meta-info, .lock-overlay, #syncNote{display:none !important;}
+    .print-only{ display:block !important; margin-bottom:16px; }
+    .print-only .print-meta-row{ font-size:14px; margin-bottom:4px; }
+    .container{box-shadow:none; padding:0;}
+    .text-cell input{border:none; pointer-events:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="lockScreen" class="lock-overlay">
+  <div class="lock-box">
+    <h2 style="margin:0 0 6px 0;">سجل حضور الدورة</h2>
+    <p id="lockSubtitle" style="color:var(--muted); font-size:13px; margin-bottom:16px;">جاري الاتصال...</p>
+    <div id="lockBody"></div>
+  </div>
+</div>
+
+<div class="container" id="appContainer" style="display:none;">
+  <h1>سجل حضور الدورة</h1>
+
+  <div class="meta-info">
+    <div class="field">
+      <label>اسم الدورة</label>
+      <input type="text" id="courseName" placeholder="اسم الدورة">
+    </div>
+    <div class="field">
+      <label>تاريخ السجل</label>
+      <input type="date" id="recordDate">
+    </div>
+    <div class="field">
+      <label>اسم المدرب</label>
+      <input type="text" id="trainerName" placeholder="اسم المدرب">
+    </div>
+  </div>
+
+  <div class="print-only" id="printMeta"></div>
+
+  <div class="toolbar">
+    <button class="btn-gold" id="addParticipantBtn">+ إضافة مشارك</button>
+    <button class="btn-outline" id="manageColumnsBtn">إدارة الأعمدة</button>
+    <button class="btn-gold" id="saveTodayBtn">حفظ اليوم</button>
+    <button class="btn-outline" id="dailyRecordsBtn">السجل اليومي</button>
+    <button class="btn-outline" id="backupBtn">نسخة احتياطية</button>
+    <button class="btn-outline" id="importBtn">استيراد نسخة</button>
+    <input type="file" id="importFileInput" accept="application/json">
+    <button class="btn-outline" id="printBtn">طباعة</button>
+    <button class="btn-outline" id="exportCsvBtn">تصدير CSV / Excel</button>
+    <button class="btn-outline" id="changePinBtn">تغيير الرقم السري</button>
+    <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
+  </div>
+  <div id="syncNote" style="font-size:12px; color:var(--muted); margin:-6px 0 10px 0;"></div>
+
+  <div class="legend" id="legend"></div>
+
+  <div class="table-wrap">
+    <table id="mainTable">
+      <thead>
+        <tr id="headerRow"></tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>إعدادات النقاط</h2>
+    <div class="base-score-row">
+      <label>الدرجة الأساسية للدورة:</label>
+      <input type="number" id="baseScoreInput" value="100">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header" id="statusSettingsToggle">
+      <h2 style="margin:0;">إعدادات الحالات</h2>
+      <span class="toggle-arrow" id="statusSettingsArrow">▸</span>
+    </div>
+    <div class="collapsible" id="statusSettingsBody">
+      <div class="status-settings-list" id="statusSettingsList"></div>
+      <div style="margin-top:10px;">
+        <button class="btn-outline btn-small" id="addStatusBtn">+ إضافة حالة جديدة</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="save-note">يتم حفظ البيانات تلقائيًا على هذا الجهاز</p>
+</div>
+
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const DEFAULT_STATUSES = [
+    { id: "present",  name: "حاضر",  color: "#4CAF50", deduction: 0 },
+    { id: "absent",   name: "غائب",  color: "#E53935", deduction: 2 },
+    { id: "late",     name: "تأخير", color: "#FDD835", deduction: 0.5 },
+    { id: "clinic",   name: "عيادة", color: "#42A5F5", deduction: 0 },
+    { id: "permit",   name: "تصريح", color: "#AB47BC", deduction: 0 },
+    { id: "exam1",    name: "فحص",   color: "#26A69A", deduction: 0 },
+    { id: "test",     name: "اختبار",color: "#8D6E63", deduction: 0 },
+    { id: "task",     name: "مهمة",  color: "#FF7043", deduction: 0 },
+    { id: "other",    name: "أخرى",  color: "#9E9E9E", deduction: 0 }
+  ];
+
+  const SESSION_KEYS = ['queue','s1','s2','s3','s4','s5','s6','s7'];
+  const SESSION_LABELS = {
+    queue:'الطابور', s1:'حصة 1', s2:'حصة 2', s3:'حصة 3', s4:'حصة 4',
+    s5:'حصة 5', s6:'حصة 6', s7:'حصة 7'
+  };
+
+  function uid(){
+    return 'id_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+  }
+
+  function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
+
+  function defaultWorkingState(){
+    const nameColId = 'name';
+    return {
+      courseName: "",
+      recordDate: "",
+      trainerName: "",
+      baseScore: 100,
+      statuses: deepClone(DEFAULT_STATUSES),
+      columns: [
+        { id: nameColId, label: 'اسم المشارك', type: 'name', deletable: false },
+        { id: uid(), label: 'الرتبة', type: 'text', deletable: true }
+      ],
+      participants: []
+    };
+  }
+
+  function emptySessions(){
+    const s = {};
+    SESSION_KEYS.forEach(k => s[k] = null);
+    return s;
+  }
+
+  function defaultStorage(){
+    return {
+      working: defaultWorkingState(),
+      dailyRecords: {}
+    };
+  }
+
+  function normalizeStore(raw){
+    if(!raw || !raw.working || !raw.working.columns || !raw.working.statuses){
+      return defaultStorage();
+    }
+    if(!raw.dailyRecords) raw.dailyRecords = {};
+    return raw;
+  }
+
+  // ---------- Supabase connection ----------
+  const SUPABASE_URL = "https://wjpexefljlbqgaxpkdsx.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_pWoGj3-MYVDQnL7I35XEMg_dVAETM7G";
+  const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const ROW_ID = 'main';
+
+  let store = defaultStorage();
+  let currentPinHash = null;
+
+  async function fetchRow(){
+    const { data, error } = await supabaseClient
+      .from('attendance_app_state')
+      .select('data, pin_hash')
+      .eq('id', ROW_ID)
+      .single();
+    if(error) throw error;
+    return data;
+  }
+
+  async function pushDataToCloud(storeObj){
+    const { error } = await supabaseClient
+      .from('attendance_app_state')
+      .update({ data: storeObj, updated_at: new Date().toISOString() })
+      .eq('id', ROW_ID);
+    if(error) throw error;
+  }
+
+  async function pushPinHashToCloud(hash){
+    const { error } = await supabaseClient
+      .from('attendance_app_state')
+      .update({ pin_hash: hash })
+      .eq('id', ROW_ID);
+    if(error) throw error;
+  }
+
+  async function sha256Hex(text){
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  let saveTimeout = null;
+  function saveStore(){
+    const syncNote = document.getElementById('syncNote');
+    if(syncNote) syncNote.textContent = 'جاري الحفظ...';
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      pushDataToCloud(store).then(() => {
+        if(syncNote) syncNote.textContent = 'تم الحفظ ✓';
+        setTimeout(() => { if(syncNote && syncNote.textContent === 'تم الحفظ ✓') syncNote.textContent = ''; }, 1500);
+      }).catch(err => {
+        console.error(err);
+        if(syncNote) syncNote.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت';
+      });
+    }, 600);
+  }
+
+  function W(){ return store.working; }
+
+  function getStatus(id){
+    return W().statuses.find(s => s.id === id);
+  }
+
+  function computeDeduction(p){
+    let total = 0;
+    SESSION_KEYS.forEach(key => {
+      const sid = p.sessions[key];
+      if(sid){
+        const st = getStatus(sid);
+        if(st) total += Number(st.deduction) || 0;
+      }
+    });
+    return total;
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function renderMeta(){
+    document.getElementById('courseName').value = W().courseName || "";
+    document.getElementById('recordDate').value = W().recordDate || "";
+    document.getElementById('trainerName').value = W().trainerName || "";
+    document.getElementById('baseScoreInput').value = W().baseScore;
+
+    const printMeta = document.getElementById('printMeta');
+    printMeta.innerHTML = `
+      <div class="print-meta-row"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
+      <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
+      <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')}</div>
+      <div class="print-meta-row"><strong>الدرجة الأساسية:</strong> ${escapeHtml(W().baseScore)}</div>
+    `;
+  }
+
+  function renderLegend(){
+    const legend = document.getElementById('legend');
+    legend.innerHTML = "";
+    W().statuses.forEach(st => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `<span class="legend-swatch" style="background:${st.color}"></span><span>${escapeHtml(st.name)}</span>`;
+      legend.appendChild(item);
+    });
+  }
+
+  function makeTh(text){
+    const th = document.createElement('th');
+    th.textContent = text;
+    return th;
+  }
+
+  function renderHeader(){
+    const headerRow = document.getElementById('headerRow');
+    headerRow.innerHTML = '';
+
+    headerRow.appendChild(makeTh('#'));
+
+    W().columns.forEach(col => {
+      const th = makeTh(col.label);
+      if(col.type === 'name') th.style.textAlign = 'right';
+      headerRow.appendChild(th);
+    });
+
+    SESSION_KEYS.forEach(key => {
+      const th = document.createElement('th');
+      const wrap = document.createElement('div');
+      wrap.className = 'session-header';
+      const label = document.createElement('span');
+      label.textContent = SESSION_LABELS[key];
+      const btn = document.createElement('button');
+      btn.className = 'btn-outline btn-small';
+      btn.textContent = 'الجميع حاضر';
+      btn.style.fontSize = '10px';
+      btn.style.padding = '3px 6px';
+      btn.addEventListener('click', () => markAllPresent(key));
+      wrap.appendChild(label);
+      wrap.appendChild(btn);
+      th.appendChild(wrap);
+      headerRow.appendChild(th);
+    });
+
+    headerRow.appendChild(makeTh('مجموع الخصم'));
+    headerRow.appendChild(makeTh('النقاط النهائية'));
+    headerRow.appendChild(makeTh('إجراءات'));
+  }
+
+  let dragSourceId = null;
+
+  function renderTable(){
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+
+    W().participants.forEach((p, index) => {
+      const tr = document.createElement('tr');
+      tr.draggable = true;
+      tr.dataset.id = p.id;
+
+      const tdNum = document.createElement('td');
+      tdNum.className = 'row-num';
+      tdNum.textContent = index + 1;
+      tr.appendChild(tdNum);
+
+      W().columns.forEach(col => {
+        const td = document.createElement('td');
+        td.className = 'text-cell';
+        const input = document.createElement('input');
+        input.type = 'text';
+        if(col.type === 'name'){
+          input.value = p.name;
+          input.addEventListener('input', (e) => {
+            p.name = e.target.value;
+            saveStore();
+          });
+        } else {
+          input.value = (p.extra && p.extra[col.id] != null) ? p.extra[col.id] : '';
+          input.addEventListener('input', (e) => {
+            if(!p.extra) p.extra = {};
+            p.extra[col.id] = e.target.value;
+            saveStore();
+          });
+        }
+        td.appendChild(input);
+        tr.appendChild(td);
+      });
+
+      SESSION_KEYS.forEach(key => {
+        const td = document.createElement('td');
+        td.className = 'status-cell';
+        const sid = p.sessions[key];
+        const st = sid ? getStatus(sid) : null;
+        if(st){
+          td.style.background = st.color;
+          td.textContent = st.name;
+        } else {
+          td.style.background = '#fff';
+          td.textContent = '';
+        }
+        td.addEventListener('click', (e) => openStatusMenu(e, p, key));
+        tr.appendChild(td);
+      });
+
+      const deduction = computeDeduction(p);
+      const tdDeduct = document.createElement('td');
+      tdDeduct.textContent = deduction;
+      tr.appendChild(tdDeduct);
+
+      const tdFinal = document.createElement('td');
+      tdFinal.className = 'final-score';
+      tdFinal.textContent = (Number(W().baseScore) - deduction);
+      tr.appendChild(tdFinal);
+
+      const tdActions = document.createElement('td');
+      tdActions.className = 'row-actions';
+      const upBtn = document.createElement('button');
+      upBtn.className = 'btn-outline btn-small';
+      upBtn.textContent = '↑';
+      upBtn.title = 'نقل لأعلى';
+      upBtn.addEventListener('click', () => moveParticipant(index, -1));
+      const downBtn = document.createElement('button');
+      downBtn.className = 'btn-outline btn-small';
+      downBtn.textContent = '↓';
+      downBtn.title = 'نقل لأسفل';
+      downBtn.addEventListener('click', () => moveParticipant(index, 1));
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-danger btn-small';
+      delBtn.textContent = 'حذف';
+      delBtn.addEventListener('click', () => deleteParticipant(p.id));
+      tdActions.appendChild(upBtn);
+      tdActions.appendChild(downBtn);
+      tdActions.appendChild(delBtn);
+      tr.appendChild(tdActions);
+
+      tr.addEventListener('dragstart', () => { tr.classList.add('dragging'); dragSourceId = p.id; });
+      tr.addEventListener('dragend', () => { tr.classList.remove('dragging'); dragSourceId = null; });
+      tr.addEventListener('dragover', (e) => e.preventDefault());
+      tr.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if(dragSourceId && dragSourceId !== p.id){
+          reorderByDrag(dragSourceId, p.id);
+        }
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function reorderByDrag(sourceId, targetId){
+    const arr = W().participants;
+    const fromIdx = arr.findIndex(p => p.id === sourceId);
+    const toIdx = arr.findIndex(p => p.id === targetId);
+    if(fromIdx === -1 || toIdx === -1) return;
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    saveStore();
+    renderTable();
+  }
+
+  function moveParticipant(index, dir){
+    const arr = W().participants;
+    const newIndex = index + dir;
+    if(newIndex < 0 || newIndex >= arr.length) return;
+    [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+    saveStore();
+    renderTable();
+  }
+
+  function deleteParticipant(id){
+    showConfirm('هل أنت متأكد من حذف هذا المشارك؟', () => {
+      W().participants = W().participants.filter(p => p.id !== id);
+      saveStore();
+      renderTable();
+    });
+  }
+
+  function markAllPresent(sessionKey){
+    const presentStatus = W().statuses.find(s => s.id === 'present') || W().statuses[0];
+    if(!presentStatus) return;
+    W().participants.forEach(p => { p.sessions[sessionKey] = presentStatus.id; });
+    saveStore();
+    renderTable();
+  }
+
+  function addParticipant(){
+    const p = { id: uid(), name: '', extra: {}, sessions: emptySessions() };
+    W().columns.forEach(col => { if(col.type === 'text') p.extra[col.id] = ''; });
+    W().participants.push(p);
+    saveStore();
+    renderTable();
+    setTimeout(() => {
+      const inputs = document.querySelectorAll('.text-cell input');
+      if(inputs.length) inputs[0].focus();
+    }, 0);
+  }
+
+  function openStatusMenu(e, participant, sessionKey){
+    closeStatusMenu();
+    const menu = document.createElement('div');
+    menu.className = 'status-menu';
+
+    const clearItem = document.createElement('div');
+    clearItem.className = 'status-menu-item';
+    clearItem.innerHTML = `<span class="status-menu-swatch" style="background:#fff;border:1px solid #ccc;"></span><span>بدون</span>`;
+    clearItem.addEventListener('click', () => {
+      participant.sessions[sessionKey] = null;
+      saveStore();
+      renderTable();
+      closeStatusMenu();
+    });
+    menu.appendChild(clearItem);
+
+    W().statuses.forEach(st => {
+      const item = document.createElement('div');
+      item.className = 'status-menu-item';
+      item.innerHTML = `<span class="status-menu-swatch" style="background:${st.color}"></span><span>${escapeHtml(st.name)}</span>`;
+      item.addEventListener('click', () => {
+        participant.sessions[sessionKey] = st.id;
+        saveStore();
+        renderTable();
+        closeStatusMenu();
+      });
+      menu.appendChild(item);
+    });
+
+    document.body.appendChild(menu);
+    const rect = e.target.getBoundingClientRect();
+    let left = rect.left;
+    let top = rect.bottom + 4;
+    const menuWidth = 160;
+    if(left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth - 8;
+    if(top + 300 > window.innerHeight) top = Math.max(8, rect.top - 4 - 250);
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+
+    setTimeout(() => { document.addEventListener('click', outsideClickListener); }, 0);
+  }
+
+  function outsideClickListener(e){
+    const menu = document.querySelector('.status-menu');
+    if(menu && !menu.contains(e.target)) closeStatusMenu();
+  }
+
+  function closeStatusMenu(){
+    const menu = document.querySelector('.status-menu');
+    if(menu) menu.remove();
+    document.removeEventListener('click', outsideClickListener);
+  }
+
+  function renderStatusSettings(){
+    const list = document.getElementById('statusSettingsList');
+    list.innerHTML = '';
+    W().statuses.forEach(st => {
+      const row = document.createElement('div');
+      row.className = 'status-settings-row';
+
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.value = st.color;
+      colorInput.addEventListener('input', (e) => {
+        st.color = e.target.value;
+        saveStore();
+        renderLegend();
+        renderTable();
+      });
+
+      const nameInput = document.createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = st.name;
+      nameInput.addEventListener('input', (e) => {
+        st.name = e.target.value;
+        saveStore();
+        renderLegend();
+        renderTable();
+      });
+
+      const deductLabel = document.createElement('span');
+      deductLabel.textContent = 'الخصم:';
+      deductLabel.style.fontSize = '12px';
+      deductLabel.style.color = 'var(--muted)';
+
+      const deductInput = document.createElement('input');
+      deductInput.type = 'number';
+      deductInput.step = '0.1';
+      deductInput.value = st.deduction;
+      deductInput.addEventListener('input', (e) => {
+        st.deduction = parseFloat(e.target.value) || 0;
+        saveStore();
+        renderTable();
+      });
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-danger btn-small';
+      delBtn.textContent = 'حذف';
+      delBtn.addEventListener('click', () => {
+        showConfirm('هل تريد حذف هذه الحالة؟', () => {
+          W().statuses = W().statuses.filter(s => s.id !== st.id);
+          W().participants.forEach(p => {
+            SESSION_KEYS.forEach(key => { if(p.sessions[key] === st.id) p.sessions[key] = null; });
+          });
+          saveStore();
+          renderStatusSettings();
+          renderLegend();
+          renderTable();
+        });
+      });
+
+      row.appendChild(colorInput);
+      row.appendChild(nameInput);
+      row.appendChild(deductLabel);
+      row.appendChild(deductInput);
+      row.appendChild(delBtn);
+      list.appendChild(row);
+    });
+  }
+
+  function addNewStatus(){
+    W().statuses.push({ id: uid(), name: 'حالة جديدة', color: '#607D8B', deduction: 0 });
+    saveStore();
+    renderStatusSettings();
+    renderLegend();
+  }
+
+  function openColumnManager(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'إدارة الأعمدة';
+    box.appendChild(h3);
+
+    const list = document.createElement('div');
+    list.className = 'column-list';
+    box.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      W().columns.forEach((col, idx) => {
+        const row = document.createElement('div');
+        row.className = 'column-row';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = col.label;
+        nameInput.addEventListener('input', (e) => {
+          col.label = e.target.value;
+          saveStore();
+          renderHeader();
+        });
+
+        const upBtn = document.createElement('button');
+        upBtn.className = 'btn-outline btn-small';
+        upBtn.textContent = '→ تقديم';
+        upBtn.addEventListener('click', () => {
+          if(idx === 0) return;
+          const arr = W().columns;
+          [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+          saveStore();
+          renderHeader(); renderTable(); renderList();
+        });
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'btn-outline btn-small';
+        downBtn.textContent = '← تأخير';
+        downBtn.addEventListener('click', () => {
+          const arr = W().columns;
+          if(idx === arr.length - 1) return;
+          [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+          saveStore();
+          renderHeader(); renderTable(); renderList();
+        });
+
+        row.appendChild(nameInput);
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
+
+        if(col.deletable){
+          const delBtn = document.createElement('button');
+          delBtn.className = 'btn-danger btn-small';
+          delBtn.textContent = 'حذف العمود';
+          delBtn.addEventListener('click', () => {
+            showConfirm('سيتم حذف هذا العمود وجميع بياناته. هل أنت متأكد؟', () => {
+              W().columns = W().columns.filter(c => c.id !== col.id);
+              W().participants.forEach(p => { if(p.extra) delete p.extra[col.id]; });
+              saveStore();
+              renderHeader(); renderTable(); renderList();
+            });
+          });
+          row.appendChild(delBtn);
+        } else {
+          const lockNote = document.createElement('span');
+          lockNote.style.fontSize = '11px';
+          lockNote.style.color = 'var(--muted)';
+          lockNote.textContent = '(أساسي - لا يمكن حذفه)';
+          row.appendChild(lockNote);
+        }
+
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-column-row';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = 'اسم العمود الجديد';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn-gold btn-small';
+    addBtn.textContent = 'إضافة عمود';
+    addBtn.addEventListener('click', () => {
+      const label = addInput.value.trim();
+      if(!label) return;
+      const newCol = { id: uid(), label: label, type: 'text', deletable: true };
+      W().columns.push(newCol);
+      W().participants.forEach(p => { if(!p.extra) p.extra = {}; p.extra[newCol.id] = ''; });
+      saveStore();
+      addInput.value = '';
+      renderHeader(); renderTable(); renderList();
+    });
+    addRow.appendChild(addInput);
+    addRow.appendChild(addBtn);
+    box.appendChild(addRow);
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  function saveToday(){
+    const date = W().recordDate;
+    if(!date){
+      showMessage('يرجى تحديد تاريخ السجل أولاً قبل الحفظ.');
+      return;
+    }
+    const doSave = () => {
+      store.dailyRecords[date] = {
+        savedAt: new Date().toISOString(),
+        snapshot: deepClone(W())
+      };
+      saveStore();
+      showMessage('تم حفظ سجل هذا اليوم بنجاح.');
+    };
+    if(store.dailyRecords[date]){
+      showConfirm('يوجد سجل محفوظ مسبقًا لهذا التاريخ. هل تريد تحديثه؟', doSave);
+    } else {
+      doSave();
+    }
+  }
+
+  function openDailyRecords(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'السجل اليومي';
+    box.appendChild(h3);
+
+    const list = document.createElement('div');
+    list.className = 'daily-list';
+    box.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      const dates = Object.keys(store.dailyRecords).sort().reverse();
+      if(dates.length === 0){
+        const note = document.createElement('div');
+        note.className = 'empty-note';
+        note.textContent = 'لا توجد سجلات محفوظة بعد.';
+        list.appendChild(note);
+        return;
+      }
+      dates.forEach(date => {
+        const rec = store.dailyRecords[date];
+        const row = document.createElement('div');
+        row.className = 'daily-row';
+
+        const info = document.createElement('div');
+        info.className = 'daily-info';
+        const savedAtStr = new Date(rec.savedAt).toLocaleString('ar');
+        const count = rec.snapshot.participants ? rec.snapshot.participants.length : 0;
+        info.innerHTML = `<strong>${escapeHtml(date)}</strong><br>عدد المشاركين: ${count}<br>وقت الحفظ: ${escapeHtml(savedAtStr)}`;
+
+        const actions = document.createElement('div');
+        actions.className = 'daily-actions';
+
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn-gold btn-small';
+        restoreBtn.textContent = 'استرجاع';
+        restoreBtn.addEventListener('click', () => {
+          showConfirm('سيتم استبدال بيانات الجدول الحالي ببيانات هذا اليوم. هل أنت متأكد؟', () => {
+            store.working = deepClone(rec.snapshot);
+            saveStore();
+            renderAll();
+            root.innerHTML = '';
+          });
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-danger btn-small';
+        delBtn.textContent = 'حذف';
+        delBtn.addEventListener('click', () => {
+          showConfirm('هل تريد حذف سجل هذا اليوم نهائيًا؟', () => {
+            delete store.dailyRecords[date];
+            saveStore();
+            renderList();
+          });
+        });
+
+        actions.appendChild(restoreBtn);
+        actions.appendChild(delBtn);
+        row.appendChild(info);
+        row.appendChild(actions);
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  function downloadBackup(){
+    const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+    a.download = 'attendance_backup_' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(file){
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      let parsed;
+      try{
+        parsed = JSON.parse(e.target.result);
+      }catch(err){
+        showMessage('تعذر قراءة الملف. تأكد أنه ملف نسخة احتياطية صحيح.');
+        return;
+      }
+      if(!parsed || !parsed.working || !parsed.working.columns || !parsed.working.statuses){
+        showMessage('صيغة الملف غير صحيحة.');
+        return;
+      }
+      showConfirm('سيتم استبدال جميع البيانات الحالية والسجل اليومي ببيانات هذا الملف. هل أنت متأكد؟', () => {
+        store = parsed;
+        if(!store.dailyRecords) store.dailyRecords = {};
+        saveStore();
+        renderAll();
+        showMessage('تم استيراد النسخة الاحتياطية بنجاح.');
+      });
+    };
+    reader.readAsText(file);
+  }
+
+  function exportCsv(){
+    const rows = [];
+    rows.push(['اسم الدورة', W().courseName || '']);
+    rows.push(['تاريخ السجل', W().recordDate || '']);
+    rows.push(['اسم المدرب', W().trainerName || '']);
+    rows.push(['الدرجة الأساسية', W().baseScore]);
+    rows.push([]);
+
+    const header = ['#'];
+    W().columns.forEach(c => header.push(c.label));
+    SESSION_KEYS.forEach(k => header.push(SESSION_LABELS[k]));
+    header.push('مجموع الخصم', 'النقاط النهائية');
+    rows.push(header);
+
+    W().participants.forEach((p, idx) => {
+      const row = [idx+1];
+      W().columns.forEach(col => {
+        if(col.type === 'name') row.push(p.name || '');
+        else row.push((p.extra && p.extra[col.id]) || '');
+      });
+      SESSION_KEYS.forEach(key => {
+        const sid = p.sessions[key];
+        const st = sid ? getStatus(sid) : null;
+        row.push(st ? st.name : '');
+      });
+      const deduction = computeDeduction(p);
+      row.push(deduction, Number(W().baseScore) - deduction);
+      rows.push(row);
+    });
+
+    const csvContent = rows.map(r => r.map(cell => {
+      const val = String(cell == null ? '' : cell);
+      if(val.includes(',') || val.includes('"') || val.includes('\n')){
+        return '"' + val.replace(/"/g, '""') + '"';
+      }
+      return val;
+    }).join(',')).join('\n');
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const fname = (W().courseName || 'سجل_الحضور').trim().replace(/\s+/g, '_');
+    a.download = fname + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function showConfirm(message, onConfirm){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    const p = document.createElement('p');
+    p.textContent = message;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const yesBtn = document.createElement('button');
+    yesBtn.className = 'btn-danger';
+    yesBtn.textContent = 'نعم، تأكيد';
+    yesBtn.addEventListener('click', () => { onConfirm(); root.innerHTML = ''; });
+    const noBtn = document.createElement('button');
+    noBtn.className = 'btn-outline';
+    noBtn.textContent = 'إلغاء';
+    noBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    actions.appendChild(yesBtn);
+    actions.appendChild(noBtn);
+    box.appendChild(p);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  function showMessage(message){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    const p = document.createElement('p');
+    p.textContent = message;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const okBtn = document.createElement('button');
+    okBtn.className = 'btn-gold';
+    okBtn.textContent = 'حسنًا';
+    okBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    actions.appendChild(okBtn);
+    box.appendChild(p);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('recordDate').addEventListener('input', (e) => { W().recordDate = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('baseScoreInput').addEventListener('input', (e) => {
+    W().baseScore = parseFloat(e.target.value) || 0;
+    saveStore();
+    renderTable();
+    renderMeta();
+  });
+
+  document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
+  document.getElementById('manageColumnsBtn').addEventListener('click', openColumnManager);
+  document.getElementById('saveTodayBtn').addEventListener('click', saveToday);
+  document.getElementById('dailyRecordsBtn').addEventListener('click', openDailyRecords);
+  document.getElementById('backupBtn').addEventListener('click', downloadBackup);
+  document.getElementById('importBtn').addEventListener('click', () => document.getElementById('importFileInput').click());
+  document.getElementById('importFileInput').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if(file) handleImportFile(file);
+    e.target.value = '';
+  });
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
+  document.getElementById('exportCsvBtn').addEventListener('click', exportCsv);
+  document.getElementById('addStatusBtn').addEventListener('click', addNewStatus);
+  document.getElementById('statusSettingsToggle').addEventListener('click', () => {
+    document.getElementById('statusSettingsBody').classList.toggle('open');
+    document.getElementById('statusSettingsArrow').classList.toggle('open');
+  });
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    showConfirm('سيتم حذف بيانات الجدول الحالي (المشاركون والأعمدة ومعلومات الدورة). لن يتأثر السجل اليومي المحفوظ. هل أنت متأكد؟', () => {
+      store.working = defaultWorkingState();
+      saveStore();
+      renderAll();
+    });
+  });
+
+  function renderAll(){
+    renderMeta();
+    renderLegend();
+    renderHeader();
+    renderStatusSettings();
+    renderTable();
+  }
+
+  // ---------- Lock screen (PIN gate) ----------
+
+  function setLockSubtitle(text){
+    document.getElementById('lockSubtitle').textContent = text;
+  }
+
+  function showUnlockedApp(){
+    document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    renderAll();
+  }
+
+  function renderEnterPinScreen(storedHash, cloudData){
+    setLockSubtitle('أدخل الرقم السري المكوّن من 4 أرقام');
+    const body = document.getElementById('lockBody');
+    body.innerHTML = `
+      <input type="password" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="****">
+      <button class="btn-gold" id="pinSubmitBtn">دخول</button>
+      <p class="lock-error" id="pinError"></p>
+    `;
+    const pinInput = document.getElementById('pinInput');
+    const submit = async () => {
+      const val = pinInput.value.trim();
+      const errorEl = document.getElementById('pinError');
+      if(!/^\d{4}$/.test(val)){
+        errorEl.textContent = 'الرجاء إدخال 4 أرقام فقط.';
+        return;
+      }
+      const hash = await sha256Hex(val);
+      if(hash === storedHash){
+        currentPinHash = storedHash;
+        store = normalizeStore(cloudData);
+        showUnlockedApp();
+      } else {
+        errorEl.textContent = 'الرقم السري غير صحيح.';
+        pinInput.value = '';
+        pinInput.focus();
+      }
+    };
+    document.getElementById('pinSubmitBtn').addEventListener('click', submit);
+    pinInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') submit(); });
+    pinInput.focus();
+  }
+
+  function renderSetupPinScreen(cloudData){
+    setLockSubtitle('لا يوجد رقم سري بعد - قم بإنشاء واحد لحماية الصفحة');
+    const body = document.getElementById('lockBody');
+    body.innerHTML = `
+      <input type="password" id="newPinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="رقم سري جديد (4 أرقام)">
+      <input type="password" id="confirmPinInput" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="تأكيد الرقم السري">
+      <button class="btn-gold" id="pinSetupBtn">إنشاء وحفظ</button>
+      <p class="lock-error" id="pinError"></p>
+      <p class="lock-hint">يمكنك تغيير هذا الرقم لاحقًا من داخل الصفحة في أي وقت.</p>
+    `;
+    const newPinInput = document.getElementById('newPinInput');
+    const confirmPinInput = document.getElementById('confirmPinInput');
+    const submit = async () => {
+      const p1 = newPinInput.value.trim();
+      const p2 = confirmPinInput.value.trim();
+      const errorEl = document.getElementById('pinError');
+      if(!/^\d{4}$/.test(p1)){
+        errorEl.textContent = 'الرجاء إدخال 4 أرقام فقط.';
+        return;
+      }
+      if(p1 !== p2){
+        errorEl.textContent = 'الرقمان غير متطابقين.';
+        return;
+      }
+      const hash = await sha256Hex(p1);
+      try{
+        await pushPinHashToCloud(hash);
+      }catch(err){
+        errorEl.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت.';
+        return;
+      }
+      currentPinHash = hash;
+      store = normalizeStore(cloudData);
+      try{ await pushDataToCloud(store); }catch(err){ /* non-fatal on first setup */ }
+      showUnlockedApp();
+    };
+    document.getElementById('pinSetupBtn').addEventListener('click', submit);
+    confirmPinInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') submit(); });
+    newPinInput.focus();
+  }
+
+  function renderConnectionError(detail){
+    setLockSubtitle('');
+    const body = document.getElementById('lockBody');
+    const detailHtml = detail ? `<p class="lock-hint" style="direction:ltr; text-align:left; word-break:break-all;">${escapeHtml(detail)}</p>` : '';
+    body.innerHTML = `
+      <p class="lock-error">تعذر الاتصال بقاعدة البيانات. تحقق من اتصال الإنترنت ثم أعد المحاولة.</p>
+      ${detailHtml}
+      <button class="btn-outline" id="retryBtn">إعادة المحاولة</button>
+    `;
+    document.getElementById('retryBtn').addEventListener('click', initLock);
+  }
+
+  async function initLock(){
+    setLockSubtitle('جاري الاتصال...');
+    document.getElementById('lockBody').innerHTML = '';
+    let row;
+    try{
+      row = await fetchRow();
+    }catch(err){
+      const detail = (err && (err.message || err.error_description || err.details)) || JSON.stringify(err);
+      console.error('Supabase connection error:', detail, err);
+      renderConnectionError(detail);
+      return;
+    }
+    if(!row || !row.pin_hash){
+      renderSetupPinScreen(row ? row.data : null);
+    } else {
+      renderEnterPinScreen(row.pin_hash, row.data);
+    }
+  }
+
+  // ---------- Change PIN ----------
+
+  function openChangePin(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML = `
+      <h3>تغيير الرقم السري</h3>
+      <input type="password" id="curPinInput" maxlength="4" inputmode="numeric" placeholder="الرقم السري الحالي" style="width:100%; text-align:center; letter-spacing:6px; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">
+      <input type="password" id="newPinInput2" maxlength="4" inputmode="numeric" placeholder="الرقم السري الجديد" style="width:100%; text-align:center; letter-spacing:6px; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">
+      <input type="password" id="confirmPinInput2" maxlength="4" inputmode="numeric" placeholder="تأكيد الرقم الجديد" style="width:100%; text-align:center; letter-spacing:6px; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">
+      <p class="lock-error" id="changePinError"></p>
+    `;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'btn-gold';
+    saveBtn.textContent = 'حفظ';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-outline';
+    cancelBtn.textContent = 'إلغاء';
+    cancelBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    saveBtn.addEventListener('click', async () => {
+      const cur = document.getElementById('curPinInput').value.trim();
+      const p1 = document.getElementById('newPinInput2').value.trim();
+      const p2 = document.getElementById('confirmPinInput2').value.trim();
+      const errorEl = document.getElementById('changePinError');
+      const curHash = await sha256Hex(cur);
+      if(curHash !== currentPinHash){
+        errorEl.textContent = 'الرقم السري الحالي غير صحيح.';
+        return;
+      }
+      if(!/^\d{4}$/.test(p1)){
+        errorEl.textContent = 'الرجاء إدخال رقم جديد من 4 أرقام.';
+        return;
+      }
+      if(p1 !== p2){
+        errorEl.textContent = 'الرقمان الجديدان غير متطابقين.';
+        return;
+      }
+      const newHash = await sha256Hex(p1);
+      try{
+        await pushPinHashToCloud(newHash);
+      }catch(err){
+        errorEl.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت.';
+        return;
+      }
+      currentPinHash = newHash;
+      root.innerHTML = '';
+      showMessage('تم تغيير الرقم السري بنجاح.');
+    });
+    actions.appendChild(saveBtn);
+    actions.appendChild(cancelBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
+  document.getElementById('changePinBtn').addEventListener('click', openChangePin);
+
+  initLock();
+
+})();
+</script>
+</body>
+</html>
