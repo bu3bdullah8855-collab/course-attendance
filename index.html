@@ -695,20 +695,48 @@
   }
 
   let saveTimeout = null;
-  function saveStore(){
+  let pendingSave = false;
+
+  function doPush(){
     const syncNote = document.getElementById('syncNote');
+    pendingSave = true;
     if(syncNote) syncNote.textContent = 'جاري الحفظ...';
-    clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => {
-      pushDataToCloud(store).then(() => {
-        if(syncNote) syncNote.textContent = 'تم الحفظ ✓';
-        setTimeout(() => { if(syncNote && syncNote.textContent === 'تم الحفظ ✓') syncNote.textContent = ''; }, 1500);
-      }).catch(err => {
-        console.error(err);
-        if(syncNote) syncNote.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت';
-      });
-    }, 600);
+    pushDataToCloud(store).then(() => {
+      pendingSave = false;
+      if(syncNote) syncNote.textContent = 'تم الحفظ ✓';
+      setTimeout(() => { if(syncNote && syncNote.textContent === 'تم الحفظ ✓') syncNote.textContent = ''; }, 1500);
+    }).catch(err => {
+      pendingSave = false;
+      console.error(err);
+      if(syncNote) syncNote.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت وحاول مجددًا';
+    });
   }
+
+  // Immediate save — use for structural/one-off actions (add/delete/reorder,
+  // status changes, buttons). Persists right away so a quick tab close or
+  // navigation right after clicking a button can't lose the change.
+  function saveStore(){
+    clearTimeout(saveTimeout);
+    doPush();
+  }
+
+  // Debounced save — use only inside continuous-typing input handlers
+  // (text/number fields) so we don't fire a network request per keystroke.
+  function saveStoreDebounced(){
+    const syncNote = document.getElementById('syncNote');
+    pendingSave = true;
+    if(syncNote) syncNote.textContent = 'جاري الكتابة...';
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(doPush, 500);
+  }
+
+  window.addEventListener('beforeunload', (e) => {
+    if(pendingSave){
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  });
 
   function W(){ return store.working; }
 
@@ -845,7 +873,7 @@
       timeInput.value = sc.time || '';
       timeInput.addEventListener('input', (e) => {
         sc.time = e.target.value;
-        saveStore();
+        saveStoreDebounced();
       });
       const btn = document.createElement('button');
       btn.className = 'btn-outline btn-small';
@@ -895,7 +923,7 @@
           input.value = p.name;
           input.addEventListener('input', (e) => {
             p.name = e.target.value;
-            saveStore();
+            saveStoreDebounced();
             if(document.getElementById('examsTableBody')) renderExamsBody();
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
@@ -904,7 +932,7 @@
           input.addEventListener('input', (e) => {
             if(!p.extra) p.extra = {};
             p.extra[col.id] = e.target.value;
-            saveStore();
+            saveStoreDebounced();
             if(document.getElementById('examsTableBody')) renderExamsBody();
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
@@ -1091,7 +1119,7 @@
       colorInput.value = st.color;
       colorInput.addEventListener('input', (e) => {
         st.color = e.target.value;
-        saveStore();
+        saveStoreDebounced();
         renderLegend();
         renderTable();
       });
@@ -1101,7 +1129,7 @@
       nameInput.value = st.name;
       nameInput.addEventListener('input', (e) => {
         st.name = e.target.value;
-        saveStore();
+        saveStoreDebounced();
         renderLegend();
         renderTable();
       });
@@ -1117,7 +1145,7 @@
       deductInput.value = st.deduction;
       deductInput.addEventListener('input', (e) => {
         st.deduction = parseFloat(e.target.value) || 0;
-        saveStore();
+        saveStoreDebounced();
         renderTable();
       });
 
@@ -1230,7 +1258,7 @@
           inputPractical.value = subVal.practical != null ? subVal.practical : '';
           inputPractical.addEventListener('input', (e) => {
             subVal.practical = e.target.value;
-            saveStore();
+            saveStoreDebounced();
             const totalCell = tr.querySelector('.exam-total-cell');
             if(totalCell) totalCell.textContent = computeExamTotal(p);
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
@@ -1246,7 +1274,7 @@
           inputTheoretical.value = subVal.theoretical != null ? subVal.theoretical : '';
           inputTheoretical.addEventListener('input', (e) => {
             subVal.theoretical = e.target.value;
-            saveStore();
+            saveStoreDebounced();
             const totalCell = tr.querySelector('.exam-total-cell');
             if(totalCell) totalCell.textContent = computeExamTotal(p);
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
@@ -1263,7 +1291,7 @@
           input.addEventListener('input', (e) => {
             if(!p.examScores) p.examScores = {};
             p.examScores[col.id] = e.target.value;
-            saveStore();
+            saveStoreDebounced();
             const totalCell = tr.querySelector('.exam-total-cell');
             if(totalCell) totalCell.textContent = computeExamTotal(p);
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
@@ -1315,7 +1343,7 @@
         nameInput.value = col.label;
         nameInput.addEventListener('input', (e) => {
           col.label = e.target.value;
-          saveStore();
+          saveStoreDebounced();
           renderExamsHeader();
         });
 
@@ -1525,7 +1553,7 @@
         nameInput.value = sc.label;
         nameInput.addEventListener('input', (e) => {
           sc.label = e.target.value;
-          saveStore();
+          saveStoreDebounced();
           renderHeader();
         });
 
@@ -1638,7 +1666,7 @@
         nameInput.value = col.label;
         nameInput.addEventListener('input', (e) => {
           col.label = e.target.value;
-          saveStore();
+          saveStoreDebounced();
           renderHeader();
         });
 
@@ -1997,19 +2025,19 @@
     root.appendChild(overlay);
   }
 
-  document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStoreDebounced(); renderMeta(); });
   document.getElementById('recordDate').addEventListener('input', (e) => { W().recordDate = e.target.value; saveStore(); renderMeta(); });
-  document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStore(); renderMeta(); });
-  document.getElementById('courseSubject').addEventListener('input', (e) => { W().subject = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStoreDebounced(); renderMeta(); });
+  document.getElementById('courseSubject').addEventListener('input', (e) => { W().subject = e.target.value; saveStoreDebounced(); renderMeta(); });
   document.getElementById('baseScoreInput').addEventListener('input', (e) => {
     W().baseScore = parseFloat(e.target.value) || 0;
-    saveStore();
+    saveStoreDebounced();
     renderTable();
     renderMeta();
   });
   document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
     W().totalCourseGrade = parseFloat(e.target.value) || 0;
-    saveStore();
+    saveStoreDebounced();
     renderMeta();
     renderSummaryBody();
   });
