@@ -381,6 +381,26 @@
     font-size:13px;
   }
 
+  @media (max-width: 640px){
+    body{ padding:8px; }
+    .container{ padding:12px; border-radius:8px; }
+    h1{ font-size:19px; }
+    .meta-info{ gap:8px; }
+    .meta-info .field{ min-width:100%; }
+    .tab-nav{ gap:0; }
+    .tab-btn{ padding:8px 10px; font-size:13px; }
+    .toolbar{ gap:6px; }
+    .toolbar button{ padding:7px 10px; font-size:13px; }
+    .legend{ font-size:12px; gap:6px; }
+    table{ font-size:12px; }
+    th, td{ padding:5px; }
+    .text-cell, .readonly-cell{ min-width:90px; max-width:140px; }
+    .session-time-input{ width:48px; }
+    .modal-box{ padding:14px; }
+    .modal-box.wide{ max-width:100%; }
+    .status-menu{ min-width:130px; }
+  }
+
   @media print{
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
@@ -526,7 +546,7 @@
       <label>الدرجة الكلية للدورة (السقف المرجعي):</label>
       <input type="number" id="totalCourseGradeInput" value="1000">
     </div>
-    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور من كل الأيام المحفوظة في السجل اليومي). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -708,6 +728,33 @@
     return total;
   }
 
+  function computeDeductionFromSnapshot(participant, snapshotWorking){
+    let total = 0;
+    (snapshotWorking.sessions || []).forEach(sc => {
+      const sid = participant.sessions ? participant.sessions[sc.id] : null;
+      if(sid){
+        const st = (snapshotWorking.statuses || []).find(s => s.id === sid);
+        if(st) total += Number(st.deduction) || 0;
+      }
+    });
+    return total;
+  }
+
+  function computeTotalDeductionAllDays(p){
+    let total = computeDeduction(p);
+    const todayDate = W().recordDate;
+    Object.keys(store.dailyRecords).forEach(date => {
+      if(todayDate && date === todayDate) return;
+      const rec = store.dailyRecords[date];
+      if(!rec || !rec.snapshot || !rec.snapshot.participants) return;
+      const match = rec.snapshot.participants.find(sp => sp.id === p.id);
+      if(match){
+        total += computeDeductionFromSnapshot(match, rec.snapshot);
+      }
+    });
+    return total;
+  }
+
   function getExamColumnScore(p, col){
     const val = p.examScores ? p.examScores[col.id] : null;
     if(col.split){
@@ -727,7 +774,7 @@
 
   function computeFinalOverall(p){
     const examTotal = computeExamTotal(p);
-    const attendanceFinal = Number(W().baseScore) - computeDeduction(p);
+    const attendanceFinal = Number(W().baseScore) - computeTotalDeductionAllDays(p);
     return examTotal + attendanceFinal;
   }
 
@@ -1426,7 +1473,7 @@
       });
 
       const examTotal = computeExamTotal(p);
-      const deduction = computeDeduction(p);
+      const deduction = computeTotalDeductionAllDays(p);
       const finalOverall = item.final;
 
       const tdExam = document.createElement('td');
@@ -1694,6 +1741,7 @@
         snapshot: deepClone(W())
       };
       saveStore();
+      if(document.getElementById('summaryTableBody')) renderSummaryBody();
       showMessage('تم حفظ سجل هذا اليوم بنجاح.');
     };
     if(store.dailyRecords[date]){
@@ -1783,6 +1831,7 @@
           showConfirm('هل تريد حذف سجل هذا اليوم نهائيًا؟', () => {
             delete store.dailyRecords[date];
             saveStore();
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
             renderList();
           });
         });
