@@ -1430,16 +1430,24 @@
     const addBtn = document.createElement('button');
     addBtn.className = 'btn-gold btn-small';
     addBtn.textContent = 'إضافة اختبار';
-    addBtn.addEventListener('click', () => {
+    const submitAdd = () => {
       const label = addInput.value.trim();
-      if(!label) return;
+      if(!label){
+        addInput.focus();
+        addInput.style.borderColor = '#d9534f';
+        setTimeout(() => { addInput.style.borderColor = ''; }, 1200);
+        return;
+      }
       const newCol = { id: uid(), label: label, deletable: true, split: false };
       W().examColumns.push(newCol);
       W().participants.forEach(p => { if(!p.examScores) p.examScores = {}; p.examScores[newCol.id] = ''; });
       saveStore();
       addInput.value = '';
       renderExamsHeader(); renderExamsBody(); renderList();
-    });
+      addInput.focus();
+    };
+    addBtn.addEventListener('click', submitAdd);
+    addInput.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); submitAdd(); } });
     addRow.appendChild(addInput);
     addRow.appendChild(addBtn);
     box.appendChild(addRow);
@@ -1612,16 +1620,24 @@
     const addBtn = document.createElement('button');
     addBtn.className = 'btn-gold btn-small';
     addBtn.textContent = 'إضافة حصة';
-    addBtn.addEventListener('click', () => {
+    const submitAdd = () => {
       const label = addInput.value.trim();
-      if(!label) return;
+      if(!label){
+        addInput.focus();
+        addInput.style.borderColor = '#d9534f';
+        setTimeout(() => { addInput.style.borderColor = ''; }, 1200);
+        return;
+      }
       const newSession = { id: uid(), label: label, time: '' };
       W().sessions.push(newSession);
       W().participants.forEach(p => { if(!p.sessions) p.sessions = {}; p.sessions[newSession.id] = null; });
       saveStore();
       addInput.value = '';
       renderHeader(); renderTable(); renderList();
-    });
+      addInput.focus();
+    };
+    addBtn.addEventListener('click', submitAdd);
+    addInput.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); submitAdd(); } });
     addRow.appendChild(addInput);
     addRow.appendChild(addBtn);
     box.appendChild(addRow);
@@ -1730,16 +1746,24 @@
     const addBtn = document.createElement('button');
     addBtn.className = 'btn-gold btn-small';
     addBtn.textContent = 'إضافة عمود';
-    addBtn.addEventListener('click', () => {
+    const submitAdd = () => {
       const label = addInput.value.trim();
-      if(!label) return;
+      if(!label){
+        addInput.focus();
+        addInput.style.borderColor = '#d9534f';
+        setTimeout(() => { addInput.style.borderColor = ''; }, 1200);
+        return;
+      }
       const newCol = { id: uid(), label: label, type: 'text', deletable: true };
       W().columns.push(newCol);
       W().participants.forEach(p => { if(!p.extra) p.extra = {}; p.extra[newCol.id] = ''; });
       saveStore();
       addInput.value = '';
       renderHeader(); renderTable(); renderList();
-    });
+      addInput.focus();
+    };
+    addBtn.addEventListener('click', submitAdd);
+    addInput.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); submitAdd(); } });
     addRow.appendChild(addInput);
     addRow.appendChild(addBtn);
     box.appendChild(addRow);
