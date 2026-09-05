@@ -483,7 +483,7 @@
   <div class="section">
     <h2>إعدادات النقاط</h2>
     <div class="base-score-row">
-      <label>الدرجة الأساسية للدورة:</label>
+      <label>الدرجة الكلية للدورة:</label>
       <input type="number" id="baseScoreInput" value="100">
     </div>
   </div>
@@ -513,6 +513,7 @@
       <table id="examsTable">
         <thead>
           <tr id="examsHeaderRow"></tr>
+          <tr id="examsHeaderRow2"></tr>
         </thead>
         <tbody id="examsTableBody"></tbody>
       </table>
@@ -520,7 +521,11 @@
   </div>
 
   <div class="tab-content" id="tabSummary">
-    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (النقاط النهائية في سجل الحضور) — مرتبة من الأعلى إلى الأقل</p>
+    <div class="base-score-row" id="totalCourseGradeRow">
+      <label>الدرجة الكلية للدورة:</label>
+      <input type="number" id="totalCourseGradeInput" value="100">
+    </div>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">هذه الدرجة هي نفسها "الدرجة الأساسية للدورة" في تبويب سجل الحضور — تعديلها من أي مكان ينعكس في الاثنين. الدرجة = مجموع الاختبارات + (الدرجة الكلية − مجموع خصم الحضور) — مرتبة من الأعلى إلى الأقل</p>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -692,11 +697,19 @@
     return total;
   }
 
+  function getExamColumnScore(p, col){
+    const val = p.examScores ? p.examScores[col.id] : null;
+    if(col.split){
+      if(!val || typeof val !== 'object') return 0;
+      return (Number(val.practical) || 0) + (Number(val.theoretical) || 0);
+    }
+    return Number(val) || 0;
+  }
+
   function computeExamTotal(p){
     let total = 0;
     W().examColumns.forEach(col => {
-      const val = p.examScores ? p.examScores[col.id] : null;
-      total += Number(val) || 0;
+      total += getExamColumnScore(p, col);
     });
     return total;
   }
@@ -719,6 +732,8 @@
     document.getElementById('trainerName').value = W().trainerName || "";
     document.getElementById('courseSubject').value = W().subject || "";
     document.getElementById('baseScoreInput').value = W().baseScore;
+    const summaryGradeInput = document.getElementById('totalCourseGradeInput');
+    if(summaryGradeInput) summaryGradeInput.value = W().baseScore;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
@@ -1085,18 +1100,42 @@
 
   function renderExamsHeader(){
     const headerRow = document.getElementById('examsHeaderRow');
+    const headerRow2 = document.getElementById('examsHeaderRow2');
     if(!headerRow) return;
     headerRow.innerHTML = '';
-    headerRow.appendChild(makeTh('#'));
+    headerRow2.innerHTML = '';
+
+    const thNum = makeTh('#');
+    thNum.rowSpan = 2;
+    headerRow.appendChild(thNum);
+
     W().columns.forEach(col => {
       const th = makeTh(col.label);
       th.style.textAlign = 'right';
+      th.rowSpan = 2;
       headerRow.appendChild(th);
     });
+
     W().examColumns.forEach(col => {
-      headerRow.appendChild(makeTh(col.label));
+      const th = makeTh(col.label);
+      if(col.split){
+        th.colSpan = 2;
+        headerRow.appendChild(th);
+        const thPractical = makeTh('عملي');
+        thPractical.style.fontSize = '10px';
+        headerRow2.appendChild(thPractical);
+        const thTheoretical = makeTh('نظري');
+        thTheoretical.style.fontSize = '10px';
+        headerRow2.appendChild(thTheoretical);
+      } else {
+        th.rowSpan = 2;
+        headerRow.appendChild(th);
+      }
     });
-    headerRow.appendChild(makeTh('مجموع الاختبارات'));
+
+    const thTotal = makeTh('مجموع الاختبارات');
+    thTotal.rowSpan = 2;
+    headerRow.appendChild(thTotal);
   }
 
   function renderExamsBody(){
@@ -1119,22 +1158,62 @@
       });
 
       W().examColumns.forEach(col => {
-        const td = document.createElement('td');
-        td.className = 'number-cell';
-        const input = document.createElement('input');
-        input.type = 'number';
-        input.step = '0.1';
-        input.value = (p.examScores && p.examScores[col.id] != null) ? p.examScores[col.id] : '';
-        input.addEventListener('input', (e) => {
+        if(col.split){
           if(!p.examScores) p.examScores = {};
-          p.examScores[col.id] = e.target.value;
-          saveStore();
-          const totalCell = tr.querySelector('.exam-total-cell');
-          if(totalCell) totalCell.textContent = computeExamTotal(p);
-          if(document.getElementById('summaryTableBody')) renderSummaryBody();
-        });
-        td.appendChild(input);
-        tr.appendChild(td);
+          if(!p.examScores[col.id] || typeof p.examScores[col.id] !== 'object'){
+            p.examScores[col.id] = { practical: '', theoretical: '' };
+          }
+          const subVal = p.examScores[col.id];
+
+          const tdPractical = document.createElement('td');
+          tdPractical.className = 'number-cell';
+          const inputPractical = document.createElement('input');
+          inputPractical.type = 'number';
+          inputPractical.step = '0.1';
+          inputPractical.value = subVal.practical != null ? subVal.practical : '';
+          inputPractical.addEventListener('input', (e) => {
+            subVal.practical = e.target.value;
+            saveStore();
+            const totalCell = tr.querySelector('.exam-total-cell');
+            if(totalCell) totalCell.textContent = computeExamTotal(p);
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
+          });
+          tdPractical.appendChild(inputPractical);
+          tr.appendChild(tdPractical);
+
+          const tdTheoretical = document.createElement('td');
+          tdTheoretical.className = 'number-cell';
+          const inputTheoretical = document.createElement('input');
+          inputTheoretical.type = 'number';
+          inputTheoretical.step = '0.1';
+          inputTheoretical.value = subVal.theoretical != null ? subVal.theoretical : '';
+          inputTheoretical.addEventListener('input', (e) => {
+            subVal.theoretical = e.target.value;
+            saveStore();
+            const totalCell = tr.querySelector('.exam-total-cell');
+            if(totalCell) totalCell.textContent = computeExamTotal(p);
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
+          });
+          tdTheoretical.appendChild(inputTheoretical);
+          tr.appendChild(tdTheoretical);
+        } else {
+          const td = document.createElement('td');
+          td.className = 'number-cell';
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.step = '0.1';
+          input.value = (p.examScores && p.examScores[col.id] != null && typeof p.examScores[col.id] !== 'object') ? p.examScores[col.id] : '';
+          input.addEventListener('input', (e) => {
+            if(!p.examScores) p.examScores = {};
+            p.examScores[col.id] = e.target.value;
+            saveStore();
+            const totalCell = tr.querySelector('.exam-total-cell');
+            if(totalCell) totalCell.textContent = computeExamTotal(p);
+            if(document.getElementById('summaryTableBody')) renderSummaryBody();
+          });
+          td.appendChild(input);
+          tr.appendChild(td);
+        }
       });
 
       const tdTotal = document.createElement('td');
@@ -1183,6 +1262,37 @@
           renderExamsHeader();
         });
 
+        const splitLabel = document.createElement('label');
+        splitLabel.style.display = 'flex';
+        splitLabel.style.alignItems = 'center';
+        splitLabel.style.gap = '4px';
+        splitLabel.style.fontSize = '12px';
+        splitLabel.style.color = 'var(--muted)';
+        const splitCheckbox = document.createElement('input');
+        splitCheckbox.type = 'checkbox';
+        splitCheckbox.checked = !!col.split;
+        splitCheckbox.addEventListener('change', (e) => {
+          const turningOn = e.target.checked;
+          W().participants.forEach(p => {
+            if(!p.examScores) p.examScores = {};
+            const current = p.examScores[col.id];
+            if(turningOn){
+              if(current && typeof current === 'object') return;
+              p.examScores[col.id] = { practical: '', theoretical: (current != null ? current : '') };
+            } else {
+              if(current && typeof current === 'object'){
+                const sum = (Number(current.practical) || 0) + (Number(current.theoretical) || 0);
+                p.examScores[col.id] = sum || '';
+              }
+            }
+          });
+          col.split = turningOn;
+          saveStore();
+          renderExamsHeader(); renderExamsBody(); renderSummaryBody();
+        });
+        splitLabel.appendChild(splitCheckbox);
+        splitLabel.appendChild(document.createTextNode('تقسيم إلى عملي / نظري'));
+
         const upBtn = document.createElement('button');
         upBtn.className = 'btn-outline btn-small';
         upBtn.textContent = '→ تقديم';
@@ -1218,6 +1328,7 @@
         });
 
         row.appendChild(nameInput);
+        row.appendChild(splitLabel);
         row.appendChild(upBtn);
         row.appendChild(downBtn);
         row.appendChild(delBtn);
@@ -1237,7 +1348,7 @@
     addBtn.addEventListener('click', () => {
       const label = addInput.value.trim();
       if(!label) return;
-      const newCol = { id: uid(), label: label, deletable: true };
+      const newCol = { id: uid(), label: label, deletable: true, split: false };
       W().examColumns.push(newCol);
       W().participants.forEach(p => { if(!p.examScores) p.examScores = {}; p.examScores[newCol.id] = ''; });
       saveStore();
@@ -1719,6 +1830,12 @@
   document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('courseSubject').addEventListener('input', (e) => { W().subject = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('baseScoreInput').addEventListener('input', (e) => {
+    W().baseScore = parseFloat(e.target.value) || 0;
+    saveStore();
+    renderTable();
+    renderMeta();
+  });
+  document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
     W().baseScore = parseFloat(e.target.value) || 0;
     saveStore();
     renderTable();
