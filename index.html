@@ -127,6 +127,15 @@
     align-items:center;
     gap:4px;
   }
+  .session-time-input{
+    width:60px;
+    text-align:center;
+    font-size:10px;
+    padding:2px 3px;
+    border:1px solid var(--border);
+    border-radius:4px;
+    font-weight:normal;
+  }
   .text-cell{
     text-align:right;
     min-width:120px;
@@ -375,11 +384,13 @@
   @media print{
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
-    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav{display:none !important;}
+    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint, #totalCourseGradeRow{display:none !important;}
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
     .container{box-shadow:none; padding:0; max-width:none;}
-    .text-cell input{border:none; pointer-events:none;}
+    .text-cell input, .readonly-cell{border:none; pointer-events:none;}
+    .number-cell input{ border:none; pointer-events:none; width:auto; }
+    .session-time-input{ border:none; background:transparent; pointer-events:none; }
     h1{ font-size:18px; margin-bottom:8px; padding-bottom:6px; }
     .legend{ font-size:11px; margin-bottom:8px; }
     .table-wrap{ overflow:visible !important; border:none; }
@@ -394,7 +405,7 @@
       white-space:normal !important;
       word-break:break-word;
     }
-    .text-cell{ min-width:0; max-width:none; }
+    .text-cell, .readonly-cell{ min-width:0; max-width:none; }
     th .session-header button{ display:none !important; }
     .row-actions{ display:none !important; }
     .actions-col{ display:none !important; }
@@ -436,6 +447,10 @@
     <div class="field">
       <label>اسم المدرب</label>
       <input type="text" id="trainerName" placeholder="اسم المدرب">
+    </div>
+    <div class="field">
+      <label>الموضوع</label>
+      <input type="text" id="courseSubject" placeholder="الموضوع">
     </div>
   </div>
 
@@ -505,7 +520,11 @@
   </div>
 
   <div class="tab-content" id="tabSummary">
-    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">النقاط النهائية = مجموع الاختبارات + (الدرجة الأساسية − مجموع خصم الحضور)</p>
+    <div class="base-score-row" id="totalCourseGradeRow">
+      <label>الدرجة الكلية للدورة:</label>
+      <input type="number" id="totalCourseGradeInput" value="1000">
+    </div>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">النقاط النهائية = مجموع الاختبارات + (الدرجة الكلية للدورة − مجموع خصم الحضور)</p>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -554,7 +573,10 @@
       courseName: "",
       recordDate: "",
       trainerName: "",
+      subject: "",
       baseScore: 100,
+      totalCourseGrade: 1000,
+      sessionTimes: emptySessionTimes(),
       statuses: deepClone(DEFAULT_STATUSES),
       columns: [
         { id: nameColId, label: 'اسم المشارك', type: 'name', deletable: false },
@@ -563,6 +585,12 @@
       examColumns: [],
       participants: []
     };
+  }
+
+  function emptySessionTimes(){
+    const t = {};
+    SESSION_KEYS.forEach(k => t[k] = '');
+    return t;
   }
 
   function emptySessions(){
@@ -584,6 +612,9 @@
     }
     if(!raw.dailyRecords) raw.dailyRecords = {};
     if(!raw.working.examColumns) raw.working.examColumns = [];
+    if(!raw.working.sessionTimes) raw.working.sessionTimes = emptySessionTimes();
+    if(raw.working.subject == null) raw.working.subject = "";
+    if(raw.working.totalCourseGrade == null) raw.working.totalCourseGrade = 1000;
     raw.working.participants.forEach(p => {
       if(!p.examScores) p.examScores = {};
     });
@@ -676,8 +707,8 @@
 
   function computeFinalOverall(p){
     const examTotal = computeExamTotal(p);
-    const attendanceFinal = Number(W().baseScore) - computeDeduction(p);
-    return examTotal + attendanceFinal;
+    const attendancePart = Number(W().totalCourseGrade) - computeDeduction(p);
+    return examTotal + attendancePart;
   }
 
   function escapeHtml(str){
@@ -690,13 +721,17 @@
     document.getElementById('courseName').value = W().courseName || "";
     document.getElementById('recordDate').value = W().recordDate || "";
     document.getElementById('trainerName').value = W().trainerName || "";
+    document.getElementById('courseSubject').value = W().subject || "";
     document.getElementById('baseScoreInput').value = W().baseScore;
+    const totalGradeInput = document.getElementById('totalCourseGradeInput');
+    if(totalGradeInput) totalGradeInput.value = W().totalCourseGrade;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
       <div class="print-meta-row"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
       <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
       <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')}</div>
+      <div class="print-meta-row"><strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
       <div class="print-meta-row"><strong>الدرجة الأساسية:</strong> ${escapeHtml(W().baseScore)}</div>
     `;
   }
@@ -736,6 +771,16 @@
       wrap.className = 'session-header';
       const label = document.createElement('span');
       label.textContent = SESSION_LABELS[key];
+      const timeInput = document.createElement('input');
+      timeInput.type = 'text';
+      timeInput.className = 'session-time-input';
+      timeInput.placeholder = 'الوقت';
+      timeInput.value = (W().sessionTimes && W().sessionTimes[key]) || '';
+      timeInput.addEventListener('input', (e) => {
+        if(!W().sessionTimes) W().sessionTimes = emptySessionTimes();
+        W().sessionTimes[key] = e.target.value;
+        saveStore();
+      });
       const btn = document.createElement('button');
       btn.className = 'btn-outline btn-small';
       btn.textContent = 'الجميع حاضر';
@@ -743,6 +788,7 @@
       btn.style.padding = '3px 6px';
       btn.addEventListener('click', () => markAllPresent(key));
       wrap.appendChild(label);
+      wrap.appendChild(timeInput);
       wrap.appendChild(btn);
       th.appendChild(wrap);
       headerRow.appendChild(th);
@@ -1485,6 +1531,9 @@
           showConfirm('سيتم استبدال بيانات الجدول الحالي ببيانات هذا اليوم. هل أنت متأكد؟', () => {
             store.working = deepClone(rec.snapshot);
             if(!store.working.examColumns) store.working.examColumns = [];
+            if(!store.working.sessionTimes) store.working.sessionTimes = emptySessionTimes();
+            if(store.working.subject == null) store.working.subject = "";
+            if(store.working.totalCourseGrade == null) store.working.totalCourseGrade = 1000;
             store.working.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
             saveStore();
             renderAll();
@@ -1567,12 +1616,16 @@
     rows.push(['اسم الدورة', W().courseName || '']);
     rows.push(['تاريخ السجل', W().recordDate || '']);
     rows.push(['اسم المدرب', W().trainerName || '']);
+    rows.push(['الموضوع', W().subject || '']);
     rows.push(['الدرجة الأساسية', W().baseScore]);
     rows.push([]);
 
     const header = ['#'];
     W().columns.forEach(c => header.push(c.label));
-    SESSION_KEYS.forEach(k => header.push(SESSION_LABELS[k]));
+    SESSION_KEYS.forEach(k => {
+      const t = (W().sessionTimes && W().sessionTimes[k]) || '';
+      header.push(t ? `${SESSION_LABELS[k]} (${t})` : SESSION_LABELS[k]);
+    });
     header.push('مجموع الخصم', 'النقاط النهائية');
     rows.push(header);
 
@@ -1664,11 +1717,18 @@
   document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('recordDate').addEventListener('input', (e) => { W().recordDate = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStore(); renderMeta(); });
+  document.getElementById('courseSubject').addEventListener('input', (e) => { W().subject = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('baseScoreInput').addEventListener('input', (e) => {
     W().baseScore = parseFloat(e.target.value) || 0;
     saveStore();
     renderTable();
     renderMeta();
+  });
+  document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
+    W().totalCourseGrade = parseFloat(e.target.value) || 0;
+    saveStore();
+    renderMeta();
+    renderSummaryBody();
   });
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
