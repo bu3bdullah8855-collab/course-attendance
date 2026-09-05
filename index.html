@@ -457,6 +457,7 @@
   <div class="toolbar">
     <button class="btn-gold" id="addParticipantBtn">+ إضافة مشارك</button>
     <button class="btn-outline" id="manageColumnsBtn">إدارة الأعمدة</button>
+    <button class="btn-outline" id="manageSessionsBtn">إدارة الحصص</button>
     <button class="btn-gold" id="saveTodayBtn">حفظ اليوم</button>
     <button class="btn-outline" id="dailyRecordsBtn">السجل اليومي</button>
     <button class="btn-outline" id="backupBtn">نسخة احتياطية</button>
@@ -556,8 +557,8 @@
     { id: "other",    name: "أخرى",  color: "#9E9E9E", deduction: 0 }
   ];
 
-  const SESSION_KEYS = ['queue','s1','s2','s3','s4','s5','s6','s7'];
-  const SESSION_LABELS = {
+  const LEGACY_SESSION_KEYS = ['queue','s1','s2','s3','s4','s5','s6','s7'];
+  const LEGACY_SESSION_LABELS = {
     queue:'الطابور', s1:'حصة 1', s2:'حصة 2', s3:'حصة 3', s4:'حصة 4',
     s5:'حصة 5', s6:'حصة 6', s7:'حصة 7'
   };
@@ -568,6 +569,10 @@
 
   function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
+  function defaultSessionColumns(){
+    return LEGACY_SESSION_KEYS.map(k => ({ id: k, label: LEGACY_SESSION_LABELS[k], time: '' }));
+  }
+
   function defaultWorkingState(){
     const nameColId = 'name';
     return {
@@ -577,7 +582,7 @@
       subject: "",
       baseScore: 100,
       totalCourseGrade: 1000,
-      sessionTimes: emptySessionTimes(),
+      sessions: defaultSessionColumns(),
       statuses: deepClone(DEFAULT_STATUSES),
       columns: [
         { id: nameColId, label: 'اسم المشارك', type: 'name', deletable: false },
@@ -588,15 +593,9 @@
     };
   }
 
-  function emptySessionTimes(){
-    const t = {};
-    SESSION_KEYS.forEach(k => t[k] = '');
-    return t;
-  }
-
   function emptySessions(){
     const s = {};
-    SESSION_KEYS.forEach(k => s[k] = null);
+    W().sessions.forEach(sc => { s[sc.id] = null; });
     return s;
   }
 
@@ -607,18 +606,30 @@
     };
   }
 
+  function backfillWorking(w){
+    if(!w.examColumns) w.examColumns = [];
+    if(!w.sessions){
+      w.sessions = LEGACY_SESSION_KEYS.map(k => ({
+        id: k,
+        label: LEGACY_SESSION_LABELS[k],
+        time: (w.sessionTimes && w.sessionTimes[k]) || ''
+      }));
+    }
+    delete w.sessionTimes;
+    if(w.subject == null) w.subject = "";
+    if(w.totalCourseGrade == null) w.totalCourseGrade = 1000;
+    if(w.participants){
+      w.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
+    }
+    return w;
+  }
+
   function normalizeStore(raw){
     if(!raw || !raw.working || !raw.working.columns || !raw.working.statuses){
       return defaultStorage();
     }
     if(!raw.dailyRecords) raw.dailyRecords = {};
-    if(!raw.working.examColumns) raw.working.examColumns = [];
-    if(!raw.working.sessionTimes) raw.working.sessionTimes = emptySessionTimes();
-    if(raw.working.subject == null) raw.working.subject = "";
-    if(raw.working.totalCourseGrade == null) raw.working.totalCourseGrade = 1000;
-    raw.working.participants.forEach(p => {
-      if(!p.examScores) p.examScores = {};
-    });
+    raw.working = backfillWorking(raw.working);
     return raw;
   }
 
@@ -687,8 +698,8 @@
 
   function computeDeduction(p){
     let total = 0;
-    SESSION_KEYS.forEach(key => {
-      const sid = p.sessions[key];
+    W().sessions.forEach(sc => {
+      const sid = p.sessions[sc.id];
       if(sid){
         const st = getStatus(sid);
         if(st) total += Number(st.deduction) || 0;
@@ -774,20 +785,19 @@
       headerRow.appendChild(th);
     });
 
-    SESSION_KEYS.forEach(key => {
+    W().sessions.forEach(sc => {
       const th = document.createElement('th');
       const wrap = document.createElement('div');
       wrap.className = 'session-header';
       const label = document.createElement('span');
-      label.textContent = SESSION_LABELS[key];
+      label.textContent = sc.label;
       const timeInput = document.createElement('input');
       timeInput.type = 'text';
       timeInput.className = 'session-time-input';
       timeInput.placeholder = 'الوقت';
-      timeInput.value = (W().sessionTimes && W().sessionTimes[key]) || '';
+      timeInput.value = sc.time || '';
       timeInput.addEventListener('input', (e) => {
-        if(!W().sessionTimes) W().sessionTimes = emptySessionTimes();
-        W().sessionTimes[key] = e.target.value;
+        sc.time = e.target.value;
         saveStore();
       });
       const btn = document.createElement('button');
@@ -795,7 +805,7 @@
       btn.textContent = 'الجميع حاضر';
       btn.style.fontSize = '10px';
       btn.style.padding = '3px 6px';
-      btn.addEventListener('click', () => markAllPresent(key));
+      btn.addEventListener('click', () => markAllPresent(sc.id));
       wrap.appendChild(label);
       wrap.appendChild(timeInput);
       wrap.appendChild(btn);
@@ -856,10 +866,10 @@
         tr.appendChild(td);
       });
 
-      SESSION_KEYS.forEach(key => {
+      W().sessions.forEach(sc => {
         const td = document.createElement('td');
         td.className = 'status-cell';
-        const sid = p.sessions[key];
+        const sid = p.sessions[sc.id];
         const st = sid ? getStatus(sid) : null;
         if(st){
           td.style.background = st.color;
@@ -868,7 +878,7 @@
           td.style.background = '#fff';
           td.textContent = '';
         }
-        td.addEventListener('click', (e) => openStatusMenu(e, p, key));
+        td.addEventListener('click', (e) => openStatusMenu(e, p, sc.id));
         tr.appendChild(td);
       });
 
@@ -1071,7 +1081,7 @@
         showConfirm('هل تريد حذف هذه الحالة؟', () => {
           W().statuses = W().statuses.filter(s => s.id !== st.id);
           W().participants.forEach(p => {
-            SESSION_KEYS.forEach(key => { if(p.sessions[key] === st.id) p.sessions[key] = null; });
+            W().sessions.forEach(sc => { if(p.sessions[sc.id] === st.id) p.sessions[sc.id] = null; });
           });
           saveStore();
           renderStatusSettings();
@@ -1441,6 +1451,119 @@
     });
   }
 
+  function openSessionManager(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'إدارة الحصص';
+    box.appendChild(h3);
+
+    const list = document.createElement('div');
+    list.className = 'column-list';
+    box.appendChild(list);
+
+    function renderList(){
+      list.innerHTML = '';
+      W().sessions.forEach((sc, idx) => {
+        const row = document.createElement('div');
+        row.className = 'column-row';
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.value = sc.label;
+        nameInput.addEventListener('input', (e) => {
+          sc.label = e.target.value;
+          saveStore();
+          renderHeader();
+        });
+
+        const upBtn = document.createElement('button');
+        upBtn.className = 'btn-outline btn-small';
+        upBtn.textContent = '→ تقديم';
+        upBtn.addEventListener('click', () => {
+          if(idx === 0) return;
+          const arr = W().sessions;
+          [arr[idx-1], arr[idx]] = [arr[idx], arr[idx-1]];
+          saveStore();
+          renderHeader(); renderTable(); renderList();
+        });
+
+        const downBtn = document.createElement('button');
+        downBtn.className = 'btn-outline btn-small';
+        downBtn.textContent = '← تأخير';
+        downBtn.addEventListener('click', () => {
+          const arr = W().sessions;
+          if(idx === arr.length - 1) return;
+          [arr[idx+1], arr[idx]] = [arr[idx], arr[idx+1]];
+          saveStore();
+          renderHeader(); renderTable(); renderList();
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'btn-danger btn-small';
+        delBtn.textContent = 'حذف الحصة';
+        delBtn.addEventListener('click', () => {
+          if(W().sessions.length <= 1){
+            showMessage('لا يمكن حذف آخر حصة متبقية.');
+            return;
+          }
+          showConfirm('سيتم حذف هذه الحصة وكل بيانات الحضور المسجلة فيها لجميع المشاركين. هل أنت متأكد؟', () => {
+            W().sessions = W().sessions.filter(s => s.id !== sc.id);
+            W().participants.forEach(p => { if(p.sessions) delete p.sessions[sc.id]; });
+            saveStore();
+            renderHeader(); renderTable(); renderList();
+          });
+        });
+
+        row.appendChild(nameInput);
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
+        row.appendChild(delBtn);
+        list.appendChild(row);
+      });
+    }
+    renderList();
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-column-row';
+    const addInput = document.createElement('input');
+    addInput.type = 'text';
+    addInput.placeholder = 'اسم الحصة الجديدة';
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn-gold btn-small';
+    addBtn.textContent = 'إضافة حصة';
+    addBtn.addEventListener('click', () => {
+      const label = addInput.value.trim();
+      if(!label) return;
+      const newSession = { id: uid(), label: label, time: '' };
+      W().sessions.push(newSession);
+      W().participants.forEach(p => { if(!p.sessions) p.sessions = {}; p.sessions[newSession.id] = null; });
+      saveStore();
+      addInput.value = '';
+      renderHeader(); renderTable(); renderList();
+    });
+    addRow.appendChild(addInput);
+    addRow.appendChild(addBtn);
+    box.appendChild(addRow);
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
   function openColumnManager(){
     const root = document.getElementById('modalRoot');
     root.innerHTML = '';
@@ -1646,12 +1769,7 @@
         restoreBtn.textContent = 'استرجاع';
         restoreBtn.addEventListener('click', () => {
           showConfirm('سيتم استبدال بيانات الجدول الحالي ببيانات هذا اليوم. هل أنت متأكد؟', () => {
-            store.working = deepClone(rec.snapshot);
-            if(!store.working.examColumns) store.working.examColumns = [];
-            if(!store.working.sessionTimes) store.working.sessionTimes = emptySessionTimes();
-            if(store.working.subject == null) store.working.subject = "";
-            if(store.working.totalCourseGrade == null) store.working.totalCourseGrade = 1000;
-            store.working.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
+            store.working = backfillWorking(deepClone(rec.snapshot));
             saveStore();
             renderAll();
             root.innerHTML = '';
@@ -1739,9 +1857,8 @@
 
     const header = ['#'];
     W().columns.forEach(c => header.push(c.label));
-    SESSION_KEYS.forEach(k => {
-      const t = (W().sessionTimes && W().sessionTimes[k]) || '';
-      header.push(t ? `${SESSION_LABELS[k]} (${t})` : SESSION_LABELS[k]);
+    W().sessions.forEach(sc => {
+      header.push(sc.time ? `${sc.label} (${sc.time})` : sc.label);
     });
     header.push('مجموع الخصم', 'النقاط النهائية');
     rows.push(header);
@@ -1752,8 +1869,8 @@
         if(col.type === 'name') row.push(p.name || '');
         else row.push((p.extra && p.extra[col.id]) || '');
       });
-      SESSION_KEYS.forEach(key => {
-        const sid = p.sessions[key];
+      W().sessions.forEach(sc => {
+        const sid = p.sessions[sc.id];
         const st = sid ? getStatus(sid) : null;
         row.push(st ? st.name : '');
       });
@@ -1850,6 +1967,7 @@
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
   document.getElementById('manageColumnsBtn').addEventListener('click', openColumnManager);
+  document.getElementById('manageSessionsBtn').addEventListener('click', openSessionManager);
   document.getElementById('manageExamColumnsBtn').addEventListener('click', openExamColumnManager);
   document.getElementById('saveTodayBtn').addEventListener('click', saveToday);
   document.getElementById('dailyRecordsBtn').addEventListener('click', openDailyRecords);
