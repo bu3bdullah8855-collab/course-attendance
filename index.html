@@ -483,7 +483,7 @@
   <div class="section">
     <h2>إعدادات النقاط</h2>
     <div class="base-score-row">
-      <label>الدرجة الكلية للدورة:</label>
+      <label>الدرجة الأساسية لسجل الحضور:</label>
       <input type="number" id="baseScoreInput" value="100">
     </div>
   </div>
@@ -522,10 +522,10 @@
 
   <div class="tab-content" id="tabSummary">
     <div class="base-score-row" id="totalCourseGradeRow">
-      <label>الدرجة الكلية للدورة:</label>
-      <input type="number" id="totalCourseGradeInput" value="100">
+      <label>الدرجة الكلية للدورة (السقف المرجعي):</label>
+      <input type="number" id="totalCourseGradeInput" value="1000">
     </div>
-    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">هذه الدرجة هي نفسها "الدرجة الأساسية للدورة" في تبويب سجل الحضور — تعديلها من أي مكان ينعكس في الاثنين. الدرجة = مجموع الاختبارات + (الدرجة الكلية − مجموع خصم الحضور) — مرتبة من الأعلى إلى الأقل</p>
+    <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -733,7 +733,7 @@
     document.getElementById('courseSubject').value = W().subject || "";
     document.getElementById('baseScoreInput').value = W().baseScore;
     const summaryGradeInput = document.getElementById('totalCourseGradeInput');
-    if(summaryGradeInput) summaryGradeInput.value = W().baseScore;
+    if(summaryGradeInput) summaryGradeInput.value = W().totalCourseGrade;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
@@ -1387,6 +1387,7 @@
     headerRow.appendChild(makeTh('مجموع الاختبارات'));
     headerRow.appendChild(makeTh('مجموع الخصم'));
     headerRow.appendChild(makeTh('الدرجة'));
+    headerRow.appendChild(makeTh('النسبة من الدرجة الكلية'));
   }
 
   function renderSummaryBody(){
@@ -1430,6 +1431,11 @@
       tdFinal.className = 'final-score';
       tdFinal.textContent = finalOverall;
       tr.appendChild(tdFinal);
+
+      const tdPercent = document.createElement('td');
+      const ceiling = Number(W().totalCourseGrade);
+      tdPercent.textContent = ceiling > 0 ? ((finalOverall / ceiling) * 100).toFixed(1) + '%' : '—';
+      tr.appendChild(tdPercent);
 
       tbody.appendChild(tr);
     });
@@ -1836,10 +1842,10 @@
     renderMeta();
   });
   document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
-    W().baseScore = parseFloat(e.target.value) || 0;
+    W().totalCourseGrade = parseFloat(e.target.value) || 0;
     saveStore();
-    renderTable();
     renderMeta();
+    renderSummaryBody();
   });
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
