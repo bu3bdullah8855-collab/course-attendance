@@ -38,6 +38,24 @@
     border-bottom:3px solid var(--gold);
     padding-bottom:12px;
   }
+  .page-title-input{
+    display:block;
+    width:100%;
+    text-align:center;
+    font-size:24px;
+    font-weight:700;
+    font-family:inherit;
+    color:var(--text);
+    margin:0 0 16px 0;
+    padding:4px 4px 12px 4px;
+    border:none;
+    border-bottom:3px solid var(--gold);
+    background:transparent;
+  }
+  .page-title-input:focus{
+    outline:none;
+    background:#fffdf5;
+  }
   .meta-info{
     display:flex;
     flex-wrap:wrap;
@@ -396,6 +414,7 @@
     body{ padding:8px; }
     .container{ padding:12px; border-radius:8px; }
     h1{ font-size:19px; }
+    .page-title-input{ font-size:19px; }
     .meta-info{ gap:8px; }
     .meta-info .field{ min-width:100%; }
     .tab-nav{ gap:0; }
@@ -423,6 +442,7 @@
     .number-cell input{ border:none; pointer-events:none; width:auto; }
     .session-time-input{ border:none; background:transparent; pointer-events:none; }
     h1{ font-size:18px; margin-bottom:8px; padding-bottom:6px; }
+    .page-title-input{ font-size:18px; margin-bottom:8px; padding-bottom:6px; pointer-events:none; }
     .legend{ font-size:11px; margin-bottom:8px; }
     .table-wrap{ overflow:visible !important; border:none; }
     table{
@@ -454,7 +474,7 @@
 </div>
 
 <div class="container" id="appContainer" style="display:none;">
-  <h1>سجل حضور الدورة</h1>
+  <input type="text" id="pageTitleInput" class="page-title-input" placeholder="سجل حضور الدورة">
 
   <div class="tab-nav">
     <button class="tab-btn active" id="tabBtnAttendance" data-tab="tabAttendance">سجل الحضور</button>
@@ -606,6 +626,7 @@
   function defaultWorkingState(){
     const nameColId = 'name';
     return {
+      pageTitle: "سجل حضور الدورة",
       courseName: "",
       recordDate: "",
       trainerName: "",
@@ -648,6 +669,7 @@
     delete w.sessionTimes;
     if(w.subject == null) w.subject = "";
     if(w.totalCourseGrade == null) w.totalCourseGrade = 1000;
+    if(w.pageTitle == null) w.pageTitle = "سجل حضور الدورة";
     if(w.participants){
       w.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
     }
@@ -838,6 +860,7 @@
   }
 
   function renderMeta(){
+    document.getElementById('pageTitleInput').value = W().pageTitle || "";
     document.getElementById('courseName').value = W().courseName || "";
     document.getElementById('recordDate').value = W().recordDate || "";
     document.getElementById('trainerName').value = W().trainerName || "";
@@ -2103,6 +2126,7 @@
     root.appendChild(overlay);
   }
 
+  document.getElementById('pageTitleInput').addEventListener('input', (e) => { W().pageTitle = e.target.value; saveStoreDebounced(); });
   document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStoreDebounced(); renderMeta(); });
   document.getElementById('recordDate').addEventListener('input', (e) => { W().recordDate = e.target.value; saveStore(); renderMeta(); });
   document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStoreDebounced(); renderMeta(); });
