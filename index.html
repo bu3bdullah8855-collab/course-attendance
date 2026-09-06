@@ -774,12 +774,17 @@
     return total;
   }
 
-  function computeDeductionFromSnapshot(participant, snapshotWorking){
+  // Deduction for a bare {sessions: {...}} record (e.g. from an old day's
+  // saved snapshot) using the CURRENT, global status definitions — so
+  // editing a status's deduction value updates historical totals too,
+  // consistent with statuses being a global setting rather than something
+  // locked in per day.
+  function computeDeductionForSessionsMap(sessionsMap){
     let total = 0;
-    (snapshotWorking.sessions || []).forEach(sc => {
-      const sid = participant.sessions ? participant.sessions[sc.id] : null;
+    W().sessions.forEach(sc => {
+      const sid = sessionsMap ? sessionsMap[sc.id] : null;
       if(sid){
-        const st = (snapshotWorking.statuses || []).find(s => s.id === sid);
+        const st = getStatus(sid);
         if(st) total += Number(st.deduction) || 0;
       }
     });
@@ -797,7 +802,7 @@
       if(!snapParticipants) return;
       const match = snapParticipants.find(sp => sp.id === p.id);
       if(match){
-        total += computeDeductionFromSnapshot(match, rec.snapshot);
+        total += computeDeductionForSessionsMap(match.sessions);
       }
     });
     return total;
@@ -1831,9 +1836,11 @@
     W().recordDate = snapshot.recordDate || W().recordDate;
     W().trainerName = snapshot.trainerName || '';
     W().subject = snapshot.subject || '';
-    if(snapshot.baseScore != null) W().baseScore = snapshot.baseScore;
-    if(snapshot.statuses) W().statuses = deepClone(snapshot.statuses);
-    if(snapshot.sessions) W().sessions = deepClone(snapshot.sessions);
+    // baseScore, status definitions (names/colors/deductions), and session
+    // column definitions are GLOBAL settings — they always reflect your
+    // current configuration and are never overwritten by viewing an older
+    // day's record. Only each participant's recorded status per session
+    // changes when you switch days.
 
     const snapParticipants = snapshot.participantsSessions || snapshot.participants || [];
     const byId = {};
