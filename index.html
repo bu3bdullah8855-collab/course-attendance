@@ -359,6 +359,18 @@
   }
   .tab-btn:hover{ opacity:1; color:var(--text); }
   .tab-content{ display:none; }
+  .sync-note{
+    min-height:22px;
+    font-size:13px;
+    font-weight:600;
+    margin-bottom:10px;
+    padding:4px 10px;
+    border-radius:5px;
+    display:inline-block;
+  }
+  .sync-note.state-saving{ color:var(--gold-dark); background:#fbf6e9; }
+  .sync-note.state-saved{ color:#2e7d32; background:#eaf6ea; }
+  .sync-note.state-error{ color:#c62828; background:#fdecea; }
   .tab-content.active{ display:block; }
   .readonly-cell{
     text-align:right;
@@ -450,6 +462,8 @@
     <button class="tab-btn" id="tabBtnSummary" data-tab="tabSummary">الملخص النهائي</button>
   </div>
 
+  <div id="syncNote" class="sync-note"></div>
+
   <div class="print-only" id="printMeta"></div>
 
   <div class="tab-content active" id="tabAttendance">
@@ -485,7 +499,6 @@
     <button class="btn-outline" id="changePinBtn">تغيير الرقم السري</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
   </div>
-  <div id="syncNote" style="font-size:12px; color:var(--muted); margin:-6px 0 10px 0;"></div>
 
   <div class="legend" id="legend"></div>
 
@@ -694,18 +707,27 @@
   let saveTimeout = null;
   let pendingSave = false;
 
-  function doPush(){
+  function setSyncNote(text, state){
     const syncNote = document.getElementById('syncNote');
+    if(!syncNote) return;
+    syncNote.textContent = text;
+    syncNote.className = 'sync-note' + (state ? ' state-' + state : '');
+  }
+
+  function doPush(){
     pendingSave = true;
-    if(syncNote) syncNote.textContent = 'جاري الحفظ...';
+    setSyncNote('جاري الحفظ...', 'saving');
     pushDataToCloud(store).then(() => {
       pendingSave = false;
-      if(syncNote) syncNote.textContent = 'تم الحفظ ✓';
-      setTimeout(() => { if(syncNote && syncNote.textContent === 'تم الحفظ ✓') syncNote.textContent = ''; }, 1500);
+      setSyncNote('تم الحفظ ✓', 'saved');
+      setTimeout(() => {
+        const syncNote = document.getElementById('syncNote');
+        if(syncNote && syncNote.textContent === 'تم الحفظ ✓') setSyncNote('', '');
+      }, 3000);
     }).catch(err => {
       pendingSave = false;
       console.error(err);
-      if(syncNote) syncNote.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت وحاول مجددًا';
+      setSyncNote('تعذر الحفظ - تحقق من اتصال الإنترنت وحاول مجددًا', 'error');
     });
   }
 
@@ -720,9 +742,8 @@
   // Debounced save — use only inside continuous-typing input handlers
   // (text/number fields) so we don't fire a network request per keystroke.
   function saveStoreDebounced(){
-    const syncNote = document.getElementById('syncNote');
     pendingSave = true;
-    if(syncNote) syncNote.textContent = 'جاري الكتابة...';
+    setSyncNote('جاري الكتابة...', 'saving');
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(doPush, 500);
   }
