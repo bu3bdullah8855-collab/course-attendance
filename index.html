@@ -1004,9 +1004,7 @@
     printMeta.innerHTML = `
       <div class="print-meta-row"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
       <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
-      <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')}</div>
-      <div class="print-meta-row"><strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
-      <div class="print-meta-row"><strong>الدرجة الأساسية:</strong> ${escapeHtml(W().baseScore)}</div>
+      <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
     `;
   }
 
