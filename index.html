@@ -173,6 +173,7 @@
     background:#fffdf5;
     border-radius:4px;
   }
+  .cell-print-text{ display:none; }
   .status-cell{
     cursor:pointer;
     font-weight:600;
@@ -438,7 +439,15 @@
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
     .container{box-shadow:none; padding:0; max-width:none;}
-    .text-cell input, .readonly-cell{border:none; pointer-events:none;}
+    .text-cell input{ display:none !important; }
+    .cell-print-text{
+      display:block !important;
+      text-align:right;
+      white-space:normal;
+      word-break:break-word;
+      padding:2px;
+    }
+    .readonly-cell{border:none; pointer-events:none;}
     .number-cell input{ border:none; pointer-events:none; width:auto; }
     .session-time-input{ border:none; background:transparent; pointer-events:none; }
     h1{ font-size:18px; margin-bottom:8px; padding-bottom:6px; }
@@ -1089,25 +1098,33 @@
         td.className = 'text-cell';
         const input = document.createElement('input');
         input.type = 'text';
+        const printSpan = document.createElement('span');
+        printSpan.className = 'cell-print-text';
         if(col.type === 'name'){
           input.value = p.name;
+          printSpan.textContent = p.name || '';
           input.addEventListener('input', (e) => {
             p.name = e.target.value;
+            printSpan.textContent = e.target.value;
             saveStoreDebounced();
             if(document.getElementById('examsTableBody')) renderExamsBody();
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
         } else {
-          input.value = (p.extra && p.extra[col.id] != null) ? p.extra[col.id] : '';
+          const val = (p.extra && p.extra[col.id] != null) ? p.extra[col.id] : '';
+          input.value = val;
+          printSpan.textContent = val;
           input.addEventListener('input', (e) => {
             if(!p.extra) p.extra = {};
             p.extra[col.id] = e.target.value;
+            printSpan.textContent = e.target.value;
             saveStoreDebounced();
             if(document.getElementById('examsTableBody')) renderExamsBody();
             if(document.getElementById('summaryTableBody')) renderSummaryBody();
           });
         }
         td.appendChild(input);
+        td.appendChild(printSpan);
         tr.appendChild(td);
       });
 
