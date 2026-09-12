@@ -2558,16 +2558,7 @@
       const delBtn = document.createElement('button');
       delBtn.className = 'btn-danger btn-small';
       delBtn.textContent = 'حذف';
-      delBtn.addEventListener('click', () => {
-        showConfirm('سيتم حذف هذه الدورة وكل بياناتها نهائيًا (المشاركين، الاختبارات، السجل اليومي). هل أنت متأكد؟', async () => {
-          try{
-            await deleteCourseRow(course.id);
-            renderCoursesList();
-          }catch(err){
-            showMessage('تعذر حذف الدورة. تحقق من اتصال الإنترنت.');
-          }
-        });
-      });
+      delBtn.addEventListener('click', () => openDeleteCourseModal(course));
 
       actions.appendChild(openBtn);
       actions.appendChild(delBtn);
@@ -2602,6 +2593,74 @@
     store = null;
     document.getElementById('appContainer').style.display = 'none';
     showCoursesDashboard();
+  }
+
+  function openDeleteCourseModal(course){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML = `
+      <h3 style="color:#c62828;">⚠ حذف دورة نهائيًا</h3>
+      <p style="font-weight:bold; color:#c62828;">
+        أنت على وشك حذف الدورة "${escapeHtml(course.name || 'بدون اسم')}" وكل بياناتها
+        (المشاركين، الحصص، الاختبارات، والسجل اليومي بالكامل) — هذا الإجراء نهائي
+        ولا يمكن التراجع عنه إطلاقًا.
+      </p>
+      <p style="margin-top:10px;">لتأكيد الحذف، أدخل الرقم السري:</p>
+      <input type="password" id="deleteCourseConfirmPin" maxlength="4" inputmode="numeric" pattern="[0-9]*"
+        style="width:100%; text-align:center; letter-spacing:8px; font-size:20px; padding:10px; border:1px solid var(--border); border-radius:6px; margin-bottom:6px;">
+      <p class="lock-error" id="deleteCourseError"></p>
+    `;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn-danger';
+    confirmBtn.textContent = 'تأكيد الحذف نهائيًا';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-outline';
+    cancelBtn.textContent = 'إلغاء';
+    cancelBtn.addEventListener('click', () => { root.innerHTML = ''; });
+
+    const pinInput = box.querySelector('#deleteCourseConfirmPin');
+    const errorEl = box.querySelector('#deleteCourseError');
+
+    const submit = async () => {
+      const val = pinInput.value.trim();
+      if(!/^\d{4}$/.test(val)){
+        errorEl.textContent = 'الرجاء إدخال الرقم السري المكوّن من 4 أرقام.';
+        return;
+      }
+      const hash = await sha256Hex(val);
+      if(hash !== currentPinHash){
+        errorEl.textContent = 'الرقم السري غير صحيح — لم يتم حذف أي شيء.';
+        pinInput.value = '';
+        pinInput.focus();
+        return;
+      }
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = 'جاري الحذف...';
+      try{
+        await deleteCourseRow(course.id);
+        root.innerHTML = '';
+        renderCoursesList();
+      }catch(err){
+        errorEl.textContent = 'تعذر حذف الدورة. تحقق من اتصال الإنترنت.';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'تأكيد الحذف نهائيًا';
+      }
+    };
+    confirmBtn.addEventListener('click', submit);
+    pinInput.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); submit(); } });
+
+    actions.appendChild(confirmBtn);
+    actions.appendChild(cancelBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+    pinInput.focus();
   }
 
   function openCreateCourseModal(){
