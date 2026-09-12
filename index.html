@@ -739,6 +739,7 @@
   function doPush(){
     pendingSave = true;
     setSyncNote('جاري الحفظ...', 'saving');
+    autoSaveTodayRecord();
     pushDataToCloud(store).then(() => {
       pendingSave = false;
       setSyncNote('تم الحفظ ✓', 'saved');
@@ -828,6 +829,127 @@
       }
     });
     return total;
+  }
+
+  // List of every individual deduction a participant has, across today's
+  // live entries and every saved day, with the date/session/status/amount —
+  // used to show "why was I deducted" breakdown in the summary tab.
+  function getDeductionBreakdown(p){
+    const rows = [];
+    const todayDate = W().recordDate;
+
+    function collect(date, sessionsMap){
+      W().sessions.forEach(sc => {
+        const sid = sessionsMap ? sessionsMap[sc.id] : null;
+        if(!sid) return;
+        const st = getStatus(sid);
+        if(st && Number(st.deduction)){
+          rows.push({
+            date: date || 'اليوم الحالي (بلا تاريخ محدد)',
+            sessionLabel: sc.label,
+            statusName: st.name,
+            statusColor: st.color,
+            deduction: Number(st.deduction)
+          });
+        }
+      });
+    }
+
+    collect(todayDate, p.sessions);
+
+    Object.keys(store.dailyRecords).sort().forEach(date => {
+      if(todayDate && date === todayDate) return;
+      const rec = store.dailyRecords[date];
+      if(!rec || !rec.snapshot) return;
+      const snapParticipants = rec.snapshot.participantsSessions || rec.snapshot.participants;
+      if(!snapParticipants) return;
+      const match = snapParticipants.find(sp => sp.id === p.id);
+      if(match && match.sessions){
+        collect(date, match.sessions);
+      }
+    });
+
+    rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    return rows;
+  }
+
+  function openDeductionBreakdown(p){
+    const rows = getDeductionBreakdown(p);
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'تفاصيل الخصم — ' + (p.name || 'بدون اسم');
+    box.appendChild(h3);
+
+    if(rows.length === 0){
+      const note = document.createElement('div');
+      note.className = 'empty-note';
+      note.textContent = 'لا يوجد أي خصم مسجل لهذا المشارك.';
+      box.appendChild(note);
+    } else {
+      const tableWrap = document.createElement('div');
+      tableWrap.className = 'table-wrap';
+      const table = document.createElement('table');
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>التاريخ</th>
+            <th>الحصة</th>
+            <th>الحالة</th>
+            <th>الخصم</th>
+          </tr>
+        </thead>
+      `;
+      const tbody = document.createElement('tbody');
+      let sum = 0;
+      rows.forEach(row => {
+        sum += row.deduction;
+        const tr = document.createElement('tr');
+        const tdDate = document.createElement('td');
+        tdDate.textContent = row.date;
+        const tdSession = document.createElement('td');
+        tdSession.textContent = row.sessionLabel;
+        const tdStatus = document.createElement('td');
+        tdStatus.innerHTML = `<span class="legend-swatch" style="background:${row.statusColor}"></span> ${escapeHtml(row.statusName)}`;
+        tdStatus.style.display = 'flex';
+        tdStatus.style.alignItems = 'center';
+        tdStatus.style.gap = '6px';
+        tdStatus.style.justifyContent = 'center';
+        const tdDeduct = document.createElement('td');
+        tdDeduct.textContent = row.deduction;
+        tr.appendChild(tdDate);
+        tr.appendChild(tdSession);
+        tr.appendChild(tdStatus);
+        tr.appendChild(tdDeduct);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+      box.appendChild(tableWrap);
+
+      const totalP = document.createElement('p');
+      totalP.style.marginTop = '12px';
+      totalP.style.fontWeight = 'bold';
+      totalP.textContent = 'مجموع الخصم: ' + sum;
+      box.appendChild(totalP);
+    }
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
   }
 
   function getExamColumnScore(p, col){
@@ -1566,6 +1688,13 @@
 
       const tdDeduct = document.createElement('td');
       tdDeduct.textContent = deduction;
+      if(deduction > 0){
+        tdDeduct.style.cursor = 'pointer';
+        tdDeduct.style.color = '#2a5db0';
+        tdDeduct.style.textDecoration = 'underline';
+        tdDeduct.title = 'اضغط لعرض تفاصيل الخصم';
+        tdDeduct.addEventListener('click', () => openDeductionBreakdown(p));
+      }
       tr.appendChild(tdDeduct);
 
       const tdFinal = document.createElement('td');
@@ -1846,6 +1975,19 @@
     };
   }
 
+  // Keeps the daily-records history in sync automatically: every save
+  // (status change, participant edit, anything) also updates today's
+  // entry in the daily-records log, so nothing is ever lost if you switch
+  // to another day without pressing "حفظ اليوم" manually.
+  function autoSaveTodayRecord(){
+    const date = W().recordDate;
+    if(!date) return;
+    store.dailyRecords[date] = {
+      savedAt: new Date().toISOString(),
+      snapshot: buildDaySnapshot()
+    };
+  }
+
   // Applies a saved day's attendance data (course meta, status/session
   // definitions, and each participant's per-session status) onto the
   // CURRENT working state, without touching the participant roster,
@@ -1887,20 +2029,12 @@
       showMessage('يرجى تحديد تاريخ السجل أولاً قبل الحفظ.');
       return;
     }
-    const doSave = () => {
-      store.dailyRecords[date] = {
-        savedAt: new Date().toISOString(),
-        snapshot: buildDaySnapshot()
-      };
-      saveStore();
-      if(document.getElementById('summaryTableBody')) renderSummaryBody();
-      showMessage('تم حفظ سجل هذا اليوم بنجاح.');
-    };
-    if(store.dailyRecords[date]){
-      showConfirm('يوجد سجل محفوظ مسبقًا لهذا التاريخ. هل تريد تحديثه؟', doSave);
-    } else {
-      doSave();
-    }
+    // Attendance is already auto-saved continuously with every change, so
+    // this button is just an explicit checkpoint — no need to ask about
+    // overwriting, it's the same live data that's already been syncing.
+    saveStore();
+    if(document.getElementById('summaryTableBody')) renderSummaryBody();
+    showMessage('تم حفظ سجل هذا اليوم بنجاح.');
   }
 
   let dailySortNewestFirst = true;
