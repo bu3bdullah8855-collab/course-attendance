@@ -482,7 +482,21 @@
   </div>
 </div>
 
+<div class="container" id="coursesDashboard" style="display:none;">
+  <h1>دوراتك</h1>
+  <div class="toolbar">
+    <button class="btn-gold" id="createCourseBtn">+ إنشاء دورة جديدة</button>
+    <button class="btn-outline" id="refreshCoursesBtn">تحديث القائمة</button>
+    <button class="btn-outline" id="dashboardChangePinBtn">تغيير الرقم السري</button>
+  </div>
+  <div id="coursesSyncNote" class="sync-note"></div>
+  <div class="daily-list" id="coursesList"></div>
+</div>
+
 <div class="container" id="appContainer" style="display:none;">
+  <div class="toolbar" style="margin-bottom:8px;">
+    <button class="btn-outline" id="backToCoursesBtn">← الدورات</button>
+  </div>
   <input type="text" id="pageTitleInput" class="page-title-input" placeholder="سجل حضور الدورة">
 
   <div class="tab-nav">
@@ -700,8 +714,9 @@
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const ROW_ID = 'main';
 
-  let store = defaultStorage();
+  let store = null;
   let currentPinHash = null;
+  let currentCourseId = null;
 
   async function fetchRow(){
     const { data, error } = await supabaseClient
@@ -713,19 +728,64 @@
     return data;
   }
 
-  async function pushDataToCloud(storeObj){
-    const { error } = await supabaseClient
-      .from('attendance_app_state')
-      .update({ data: storeObj, updated_at: new Date().toISOString() })
-      .eq('id', ROW_ID);
-    if(error) throw error;
-  }
-
   async function pushPinHashToCloud(hash){
     const { error } = await supabaseClient
       .from('attendance_app_state')
       .update({ pin_hash: hash })
       .eq('id', ROW_ID);
+    if(error) throw error;
+  }
+
+  // ---------- Courses (multiple independent attendance sheets) ----------
+
+  async function fetchCourseList(){
+    const { data, error } = await supabaseClient
+      .from('attendance_courses')
+      .select('id, name, updated_at')
+      .order('updated_at', { ascending: false });
+    if(error) throw error;
+    return data || [];
+  }
+
+  async function fetchCourseData(id){
+    const { data, error } = await supabaseClient
+      .from('attendance_courses')
+      .select('data')
+      .eq('id', id)
+      .single();
+    if(error) throw error;
+    return data ? data.data : null;
+  }
+
+  async function pushCourseData(id, storeObj){
+    const { error } = await supabaseClient
+      .from('attendance_courses')
+      .update({
+        data: storeObj,
+        name: (storeObj.working && storeObj.working.courseName) || 'دورة بدون اسم',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if(error) throw error;
+  }
+
+  async function createCourseRow(name){
+    const initialStorage = defaultStorage();
+    initialStorage.working.courseName = name;
+    const { data, error } = await supabaseClient
+      .from('attendance_courses')
+      .insert({ name: name, data: initialStorage })
+      .select('id')
+      .single();
+    if(error) throw error;
+    return data.id;
+  }
+
+  async function deleteCourseRow(id){
+    const { error } = await supabaseClient
+      .from('attendance_courses')
+      .delete()
+      .eq('id', id);
     if(error) throw error;
   }
 
@@ -746,10 +806,11 @@
   }
 
   function doPush(){
+    if(!currentCourseId || !store) return;
     pendingSave = true;
     setSyncNote('جاري الحفظ...', 'saving');
     autoSaveTodayRecord();
-    pushDataToCloud(store).then(() => {
+    pushCourseData(currentCourseId, store).then(() => {
       pendingSave = false;
       setSyncNote('تم الحفظ ✓', 'saved');
       setTimeout(() => {
@@ -2340,11 +2401,12 @@
 
   function showUnlockedApp(){
     document.getElementById('lockScreen').style.display = 'none';
+    document.getElementById('coursesDashboard').style.display = 'none';
     document.getElementById('appContainer').style.display = 'block';
     renderAll();
   }
 
-  function renderEnterPinScreen(storedHash, cloudData){
+  function renderEnterPinScreen(storedHash){
     setLockSubtitle('أدخل الرقم السري المكوّن من 4 أرقام');
     const body = document.getElementById('lockBody');
     body.innerHTML = `
@@ -2363,8 +2425,8 @@
       const hash = await sha256Hex(val);
       if(hash === storedHash){
         currentPinHash = storedHash;
-        store = normalizeStore(cloudData);
-        showUnlockedApp();
+        document.getElementById('lockScreen').style.display = 'none';
+        showCoursesDashboard();
       } else {
         errorEl.textContent = 'الرقم السري غير صحيح.';
         pinInput.value = '';
@@ -2376,7 +2438,7 @@
     pinInput.focus();
   }
 
-  function renderSetupPinScreen(cloudData){
+  function renderSetupPinScreen(){
     setLockSubtitle('لا يوجد رقم سري بعد - قم بإنشاء واحد لحماية الصفحة');
     const body = document.getElementById('lockBody');
     body.innerHTML = `
@@ -2408,9 +2470,8 @@
         return;
       }
       currentPinHash = hash;
-      store = normalizeStore(cloudData);
-      try{ await pushDataToCloud(store); }catch(err){ /* non-fatal on first setup */ }
-      showUnlockedApp();
+      document.getElementById('lockScreen').style.display = 'none';
+      showCoursesDashboard();
     };
     document.getElementById('pinSetupBtn').addEventListener('click', submit);
     confirmPinInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') submit(); });
@@ -2442,10 +2503,156 @@
       return;
     }
     if(!row || !row.pin_hash){
-      renderSetupPinScreen(row ? row.data : null);
+      renderSetupPinScreen();
     } else {
-      renderEnterPinScreen(row.pin_hash, row.data);
+      renderEnterPinScreen(row.pin_hash);
     }
+  }
+
+  // ---------- Courses dashboard ----------
+
+  function setCoursesSyncNote(text){
+    const el = document.getElementById('coursesSyncNote');
+    if(el) el.textContent = text;
+  }
+
+  async function showCoursesDashboard(){
+    document.getElementById('appContainer').style.display = 'none';
+    document.getElementById('coursesDashboard').style.display = 'block';
+    await renderCoursesList();
+  }
+
+  async function renderCoursesList(){
+    const list = document.getElementById('coursesList');
+    list.innerHTML = '<div class="empty-note">جاري تحميل قائمة الدورات...</div>';
+    let courses;
+    try{
+      courses = await fetchCourseList();
+    }catch(err){
+      console.error(err);
+      list.innerHTML = '<div class="empty-note">تعذر تحميل قائمة الدورات. تحقق من اتصال الإنترنت.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    if(courses.length === 0){
+      list.innerHTML = '<div class="empty-note">لا توجد دورات بعد. أنشئ أول دورة من الزر أعلاه.</div>';
+      return;
+    }
+    courses.forEach(course => {
+      const row = document.createElement('div');
+      row.className = 'daily-row';
+
+      const info = document.createElement('div');
+      info.className = 'daily-info';
+      const updatedStr = course.updated_at ? new Date(course.updated_at).toLocaleString('ar') : '—';
+      info.innerHTML = `<strong style="font-size:15px; color:var(--text);">${escapeHtml(course.name || 'دورة بدون اسم')}</strong><br>آخر تحديث: ${escapeHtml(updatedStr)}`;
+
+      const actions = document.createElement('div');
+      actions.className = 'daily-actions';
+
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn-gold btn-small';
+      openBtn.textContent = 'فتح';
+      openBtn.addEventListener('click', () => openCourse(course.id));
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-danger btn-small';
+      delBtn.textContent = 'حذف';
+      delBtn.addEventListener('click', () => {
+        showConfirm('سيتم حذف هذه الدورة وكل بياناتها نهائيًا (المشاركين، الاختبارات، السجل اليومي). هل أنت متأكد؟', async () => {
+          try{
+            await deleteCourseRow(course.id);
+            renderCoursesList();
+          }catch(err){
+            showMessage('تعذر حذف الدورة. تحقق من اتصال الإنترنت.');
+          }
+        });
+      });
+
+      actions.appendChild(openBtn);
+      actions.appendChild(delBtn);
+      row.appendChild(info);
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  async function openCourse(id){
+    setCoursesSyncNote('جاري فتح الدورة...');
+    let data;
+    try{
+      data = await fetchCourseData(id);
+    }catch(err){
+      setCoursesSyncNote('');
+      showMessage('تعذر فتح الدورة. تحقق من اتصال الإنترنت.');
+      return;
+    }
+    setCoursesSyncNote('');
+    store = normalizeStore(data || {});
+    currentCourseId = id;
+    showUnlockedApp();
+  }
+
+  function goBackToCourseList(){
+    clearTimeout(saveTimeout);
+    if(currentCourseId && store){
+      doPush();
+    }
+    currentCourseId = null;
+    store = null;
+    document.getElementById('appContainer').style.display = 'none';
+    showCoursesDashboard();
+  }
+
+  function openCreateCourseModal(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML = `
+      <h3>إنشاء دورة جديدة</h3>
+      <input type="text" id="newCourseNameInput" placeholder="اسم الدورة" style="width:100%; text-align:right; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">
+      <p class="lock-error" id="newCourseError"></p>
+    `;
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const createBtn = document.createElement('button');
+    createBtn.className = 'btn-gold';
+    createBtn.textContent = 'إنشاء';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-outline';
+    cancelBtn.textContent = 'إلغاء';
+    cancelBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    const nameInput = box.querySelector('#newCourseNameInput');
+    const submit = async () => {
+      const name = nameInput.value.trim();
+      const errorEl = box.querySelector('#newCourseError');
+      if(!name){
+        errorEl.textContent = 'الرجاء كتابة اسم للدورة.';
+        return;
+      }
+      createBtn.disabled = true;
+      createBtn.textContent = 'جاري الإنشاء...';
+      try{
+        const id = await createCourseRow(name);
+        root.innerHTML = '';
+        await openCourse(id);
+      }catch(err){
+        errorEl.textContent = 'تعذر إنشاء الدورة. تحقق من اتصال الإنترنت.';
+        createBtn.disabled = false;
+        createBtn.textContent = 'إنشاء';
+      }
+    };
+    createBtn.addEventListener('click', submit);
+    nameInput.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); submit(); } });
+    actions.appendChild(createBtn);
+    actions.appendChild(cancelBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+    nameInput.focus();
   }
 
   // ---------- Change PIN ----------
@@ -2510,6 +2717,10 @@
   }
 
   document.getElementById('changePinBtn').addEventListener('click', openChangePin);
+  document.getElementById('dashboardChangePinBtn').addEventListener('click', openChangePin);
+  document.getElementById('backToCoursesBtn').addEventListener('click', goBackToCourseList);
+  document.getElementById('createCourseBtn').addEventListener('click', openCreateCourseModal);
+  document.getElementById('refreshCoursesBtn').addEventListener('click', renderCoursesList);
 
   initLock();
 
