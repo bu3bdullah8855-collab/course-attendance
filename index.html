@@ -276,7 +276,7 @@
     font-size:13px;
     width:130px;
   }
-  .status-settings-row input[type="number"]{
+  .status-settings-row .deduct-input{
     padding:6px 8px;
     border:1px solid var(--border);
     border-radius:5px;
@@ -366,6 +366,20 @@
     display:flex;
     align-items:center;
     gap:8px;
+  }
+  .alert-item{
+    padding:8px 12px;
+    border-radius:6px;
+    margin-bottom:6px;
+    font-size:13px;
+    background:#fff3e0;
+    color:#8a4b00;
+    border-right:4px solid #ef6c00;
+  }
+  .alert-ok{
+    color:#2e7d32;
+    font-size:13px;
+    padding:4px 0;
   }
 
   .lock-overlay{
@@ -602,7 +616,7 @@
     <h2>إعدادات النقاط</h2>
     <div class="base-score-row">
       <label>الدرجة الأساسية لسجل الحضور:</label>
-      <input type="number" id="baseScoreInput" value="100" lang="en">
+      <input type="text" inputmode="decimal" id="baseScoreInput" value="100">
     </div>
   </div>
 
@@ -641,11 +655,31 @@
   <div class="tab-content" id="tabSummary">
     <div class="base-score-row" id="totalCourseGradeRow">
       <label>الدرجة الكلية للدورة (السقف المرجعي):</label>
-      <input type="number" id="totalCourseGradeInput" value="1000" lang="en">
+      <input type="text" inputmode="decimal" id="totalCourseGradeInput" value="1000">
       <label style="margin-right:16px;">حد النجاح (%):</label>
-      <input type="number" id="passThresholdInput" value="60" min="0" max="100" lang="en">
+      <input type="text" inputmode="decimal" id="passThresholdInput" value="60">
     </div>
     <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور من كل الأيام المحفوظة في السجل اليومي). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
+
+    <div class="section" style="margin-top:0;">
+      <h2>⚠ التنبيهات</h2>
+      <div id="alertsList"></div>
+      <div class="section-header" id="alertSettingsToggle" style="margin-top:12px;">
+        <span style="font-size:13px; color:var(--muted);">إعدادات التنبيهات</span>
+        <span class="toggle-arrow" id="alertSettingsArrow">▸</span>
+      </div>
+      <div class="collapsible" id="alertSettingsBody">
+        <div class="status-settings-row">
+          <label>عدد مرات التأخير للتنبيه:</label>
+          <input type="text" inputmode="decimal" id="alertLateCountInput" value="3" class="deduct-input">
+          <label style="margin-right:10px;">حد مجموع الخصم للتنبيه:</label>
+          <input type="text" inputmode="decimal" id="alertDeductionInput" value="10" class="deduct-input">
+          <label style="margin-right:10px;">هامش القرب من الرسوب (%):</label>
+          <input type="text" inputmode="decimal" id="alertNearFailInput" value="5" class="deduct-input">
+        </div>
+      </div>
+    </div>
+
     <div id="resultsChart" class="results-chart"></div>
     <div class="table-wrap">
       <table id="summaryTable">
@@ -704,6 +738,9 @@
       baseScore: 100,
       totalCourseGrade: 1000,
       passThreshold: 60,
+      alertLateCount: 3,
+      alertDeductionTotal: 10,
+      alertNearFailMargin: 5,
       sessions: defaultSessionColumns(),
       statuses: deepClone(DEFAULT_STATUSES),
       columns: [
@@ -742,6 +779,9 @@
     if(w.totalCourseGrade == null) w.totalCourseGrade = 1000;
     if(w.pageTitle == null) w.pageTitle = "سجل حضور الدورة";
     if(w.passThreshold == null) w.passThreshold = 60;
+    if(w.alertLateCount == null) w.alertLateCount = 3;
+    if(w.alertDeductionTotal == null) w.alertDeductionTotal = 10;
+    if(w.alertNearFailMargin == null) w.alertNearFailMargin = 5;
     if(w.participants){
       w.participants.forEach(p => {
         if(!p.examScores) p.examScores = {};
@@ -957,6 +997,85 @@
   // List of every individual deduction a participant has, across today's
   // live entries and every saved day, with the date/session/status/amount —
   // used to show "why was I deducted" breakdown in the summary tab.
+  function countStatusOccurrencesByName(p, statusName){
+    let count = 0;
+    const todayDate = W().recordDate;
+    function tally(sessionsMap){
+      W().sessions.forEach(sc => {
+        const sid = sessionsMap ? sessionsMap[sc.id] : null;
+        if(sid){
+          const st = getStatus(sid);
+          if(st && st.name === statusName) count++;
+        }
+      });
+    }
+    tally(p.sessions);
+    Object.keys(store.dailyRecords).forEach(date => {
+      if(todayDate && date === todayDate) return;
+      const rec = store.dailyRecords[date];
+      if(!rec || !rec.snapshot) return;
+      const snapParticipants = rec.snapshot.participantsSessions || rec.snapshot.participants;
+      if(!snapParticipants) return;
+      const match = snapParticipants.find(sp => sp.id === p.id);
+      if(match && match.sessions) tally(match.sessions);
+    });
+    return count;
+  }
+
+  function computeAlerts(){
+    const alerts = [];
+    const lateThreshold = Number(W().alertLateCount) || 0;
+    const deductionThreshold = Number(W().alertDeductionTotal) || 0;
+    const nearFailMargin = Number(W().alertNearFailMargin) || 0;
+    const passThreshold = Number(W().passThreshold) || 0;
+    const ceiling = Number(W().totalCourseGrade) || 0;
+
+    W().participants.forEach(p => {
+      const name = p.name || 'مشارك بلا اسم';
+
+      if(lateThreshold > 0){
+        const lateCount = countStatusOccurrencesByName(p, 'تأخير');
+        if(lateCount >= lateThreshold){
+          alerts.push(`⚠ ${name} وصل إلى ${lateCount} حالات تأخير`);
+        }
+      }
+
+      if(deductionThreshold > 0){
+        const ded = computeTotalDeductionAllDays(p);
+        if(ded >= deductionThreshold){
+          alerts.push(`⚠ ${name} تجاوز ${ded} درجة خصم`);
+        }
+      }
+
+      if(ceiling > 0 && nearFailMargin > 0){
+        const finalOverall = computeFinalOverall(p);
+        const percent = (finalOverall / ceiling) * 100;
+        if(percent >= passThreshold && percent < (passThreshold + nearFailMargin)){
+          alerts.push(`⚠ ${name} قريب من حد الرسوب (${percent.toFixed(1)}%)`);
+        }
+      }
+    });
+
+    return alerts;
+  }
+
+  function renderAlerts(){
+    const listEl = document.getElementById('alertsList');
+    if(!listEl) return;
+    const alerts = computeAlerts();
+    listEl.innerHTML = '';
+    if(alerts.length === 0){
+      listEl.innerHTML = '<div class="alert-ok">لا توجد تنبيهات حاليًا ✓</div>';
+      return;
+    }
+    alerts.forEach(text => {
+      const item = document.createElement('div');
+      item.className = 'alert-item';
+      item.textContent = text;
+      listEl.appendChild(item);
+    });
+  }
+
   function getDeductionBreakdown(p){
     const rows = [];
     const todayDate = W().recordDate;
@@ -1115,6 +1234,12 @@
     if(summaryGradeInput) summaryGradeInput.value = W().totalCourseGrade;
     const passThresholdInput = document.getElementById('passThresholdInput');
     if(passThresholdInput) passThresholdInput.value = W().passThreshold;
+    const alertLateCountInput = document.getElementById('alertLateCountInput');
+    if(alertLateCountInput) alertLateCountInput.value = W().alertLateCount;
+    const alertDeductionInput = document.getElementById('alertDeductionInput');
+    if(alertDeductionInput) alertDeductionInput.value = W().alertDeductionTotal;
+    const alertNearFailInput = document.getElementById('alertNearFailInput');
+    if(alertNearFailInput) alertNearFailInput.value = W().alertNearFailMargin;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
@@ -1669,8 +1794,9 @@
       deductLabel.style.color = 'var(--muted)';
 
       const deductInput = document.createElement('input');
-      deductInput.type = 'number';
-      deductInput.lang = 'en';
+      deductInput.type = 'text';
+      deductInput.inputMode = 'decimal';
+      deductInput.className = 'deduct-input';
       deductInput.step = '0.1';
       deductInput.value = st.deduction;
       deductInput.addEventListener('input', (e) => {
@@ -1783,8 +1909,8 @@
           const tdPractical = document.createElement('td');
           tdPractical.className = 'number-cell';
           const inputPractical = document.createElement('input');
-          inputPractical.type = 'number';
-          inputPractical.lang = 'en';
+          inputPractical.type = 'text';
+          inputPractical.inputMode = 'decimal';
           inputPractical.step = '0.1';
           inputPractical.value = subVal.practical != null ? subVal.practical : '';
           inputPractical.addEventListener('input', (e) => {
@@ -1800,8 +1926,8 @@
           const tdTheoretical = document.createElement('td');
           tdTheoretical.className = 'number-cell';
           const inputTheoretical = document.createElement('input');
-          inputTheoretical.type = 'number';
-          inputTheoretical.lang = 'en';
+          inputTheoretical.type = 'text';
+          inputTheoretical.inputMode = 'decimal';
           inputTheoretical.step = '0.1';
           inputTheoretical.value = subVal.theoretical != null ? subVal.theoretical : '';
           inputTheoretical.addEventListener('input', (e) => {
@@ -1817,8 +1943,8 @@
           const td = document.createElement('td');
           td.className = 'number-cell';
           const input = document.createElement('input');
-          input.type = 'number';
-          input.lang = 'en';
+          input.type = 'text';
+          input.inputMode = 'decimal';
           input.step = '0.1';
           input.value = (p.examScores && p.examScores[col.id] != null && typeof p.examScores[col.id] !== 'object') ? p.examScores[col.id] : '';
           input.addEventListener('input', (e) => {
@@ -2151,6 +2277,7 @@
     });
 
     renderResultsChart(percents);
+    renderAlerts();
   }
 
   function openSessionManager(){
@@ -2724,6 +2851,25 @@
     saveStoreDebounced();
     renderMeta();
     renderSummaryBody();
+  });
+  document.getElementById('alertLateCountInput').addEventListener('input', (e) => {
+    W().alertLateCount = parseFloat(e.target.value) || 0;
+    saveStoreDebounced();
+    renderAlerts();
+  });
+  document.getElementById('alertDeductionInput').addEventListener('input', (e) => {
+    W().alertDeductionTotal = parseFloat(e.target.value) || 0;
+    saveStoreDebounced();
+    renderAlerts();
+  });
+  document.getElementById('alertNearFailInput').addEventListener('input', (e) => {
+    W().alertNearFailMargin = parseFloat(e.target.value) || 0;
+    saveStoreDebounced();
+    renderAlerts();
+  });
+  document.getElementById('alertSettingsToggle').addEventListener('click', () => {
+    document.getElementById('alertSettingsBody').classList.toggle('open');
+    document.getElementById('alertSettingsArrow').classList.toggle('open');
   });
 
   document.getElementById('addParticipantBtn').addEventListener('click', addParticipant);
