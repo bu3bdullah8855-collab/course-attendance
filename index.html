@@ -185,6 +185,21 @@
   .row-actions{display:flex; gap:4px; justify-content:center;}
   .final-score{font-weight:bold;}
   .row-num{color:var(--muted); font-size:12px;}
+  .photo-cell{ text-align:center; padding:4px; }
+  .photo-widget{
+    width:40px; height:40px;
+    border-radius:50%;
+    overflow:hidden;
+    margin:0 auto;
+    cursor:pointer;
+    background:#eee;
+    display:flex; align-items:center; justify-content:center;
+    font-size:16px;
+    color:var(--muted);
+    border:1px solid var(--border);
+  }
+  .photo-widget img{ width:100%; height:100%; object-fit:cover; }
+  .photo-widget input[type="file"]{ display:none; }
 
   .status-menu{
     position:fixed;
@@ -324,6 +339,34 @@
   .daily-row .daily-info{ font-size:12px; color:var(--muted); text-align:right; }
   .daily-row .daily-actions{ display:flex; gap:6px; }
   .empty-note{ color:var(--muted); font-size:13px; padding:10px 0; }
+  .results-chart{
+    display:flex;
+    align-items:flex-end;
+    gap:10px;
+    height:140px;
+    margin:16px 0 24px 0;
+    padding:10px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#fafafa;
+  }
+  .results-chart-bar-wrap{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-end;
+    height:100%;
+  }
+  .results-chart-count{ font-size:12px; font-weight:bold; margin-bottom:2px; }
+  .results-chart-bar{
+    width:100%;
+    max-width:44px;
+    background:var(--gold);
+    border-radius:4px 4px 0 0;
+    min-height:2px;
+  }
+  .results-chart-label{ font-size:11px; color:var(--muted); margin-top:4px; text-align:center; }
 
   .lock-overlay{
     position:fixed; inset:0;
@@ -469,6 +512,7 @@
     th .session-header button{ display:none !important; }
     .row-actions{ display:none !important; }
     .actions-col{ display:none !important; }
+    .results-chart, .photo-cell{ display:none !important; }
   }
 </style>
 </head>
@@ -598,8 +642,11 @@
     <div class="base-score-row" id="totalCourseGradeRow">
       <label>الدرجة الكلية للدورة (السقف المرجعي):</label>
       <input type="number" id="totalCourseGradeInput" value="1000">
+      <label style="margin-right:16px;">حد النجاح (%):</label>
+      <input type="number" id="passThresholdInput" value="60" min="0" max="100">
     </div>
     <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور من كل الأيام المحفوظة في السجل اليومي). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
+    <div id="resultsChart" class="results-chart"></div>
     <div class="table-wrap">
       <table id="summaryTable">
         <thead>
@@ -656,6 +703,7 @@
       subject: "",
       baseScore: 100,
       totalCourseGrade: 1000,
+      passThreshold: 60,
       sessions: defaultSessionColumns(),
       statuses: deepClone(DEFAULT_STATUSES),
       columns: [
@@ -693,8 +741,13 @@
     if(w.subject == null) w.subject = "";
     if(w.totalCourseGrade == null) w.totalCourseGrade = 1000;
     if(w.pageTitle == null) w.pageTitle = "سجل حضور الدورة";
+    if(w.passThreshold == null) w.passThreshold = 60;
     if(w.participants){
-      w.participants.forEach(p => { if(!p.examScores) p.examScores = {}; });
+      w.participants.forEach(p => {
+        if(!p.examScores) p.examScores = {};
+        if(p.notes == null) p.notes = "";
+        if(p.photoDataUrl == null) p.photoDataUrl = "";
+      });
     }
     return w;
   }
@@ -1060,6 +1113,8 @@
     document.getElementById('baseScoreInput').value = W().baseScore;
     const summaryGradeInput = document.getElementById('totalCourseGradeInput');
     if(summaryGradeInput) summaryGradeInput.value = W().totalCourseGrade;
+    const passThresholdInput = document.getElementById('passThresholdInput');
+    if(passThresholdInput) passThresholdInput.value = W().passThreshold;
 
     const printMeta = document.getElementById('printMeta');
     printMeta.innerHTML = `
@@ -1091,6 +1146,9 @@
     headerRow.innerHTML = '';
 
     headerRow.appendChild(makeTh('#'));
+    const photoTh = makeTh('الصورة');
+    photoTh.className = 'photo-cell';
+    headerRow.appendChild(photoTh);
 
     W().columns.forEach(col => {
       const th = makeTh(col.label);
@@ -1151,6 +1209,11 @@
       tdNum.className = 'row-num';
       tdNum.textContent = index + 1;
       tr.appendChild(tdNum);
+
+      const tdPhoto = document.createElement('td');
+      tdPhoto.className = 'photo-cell';
+      tdPhoto.appendChild(buildPhotoWidget(p));
+      tr.appendChild(tdPhoto);
 
       W().columns.forEach(col => {
         const td = document.createElement('td');
@@ -1229,8 +1292,20 @@
       delBtn.className = 'btn-danger btn-small';
       delBtn.textContent = 'حذف';
       delBtn.addEventListener('click', () => deleteParticipant(p.id));
+      const noteBtn = document.createElement('button');
+      noteBtn.className = 'btn-outline btn-small';
+      noteBtn.textContent = p.notes ? '📝•' : '📝';
+      noteBtn.title = 'ملاحظة';
+      noteBtn.addEventListener('click', () => openParticipantNotes(p));
+      const reportBtn = document.createElement('button');
+      reportBtn.className = 'btn-outline btn-small';
+      reportBtn.textContent = 'تقرير';
+      reportBtn.title = 'تقرير فردي قابل للطباعة';
+      reportBtn.addEventListener('click', () => openIndividualReport(p));
       tdActions.appendChild(upBtn);
       tdActions.appendChild(downBtn);
+      tdActions.appendChild(noteBtn);
+      tdActions.appendChild(reportBtn);
       tdActions.appendChild(delBtn);
       tr.appendChild(tdActions);
 
@@ -1279,6 +1354,191 @@
     });
   }
 
+  // ---------- Participant photo ----------
+
+  function resizeImageToDataUrl(file, maxSize){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('read failed'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('image load failed'));
+        img.onload = () => {
+          let w = img.width, h = img.height;
+          if(w > h){ if(w > maxSize){ h = Math.round(h * maxSize / w); w = maxSize; } }
+          else { if(h > maxSize){ w = Math.round(w * maxSize / h); h = maxSize; } }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function buildPhotoWidget(p){
+    const wrap = document.createElement('div');
+    wrap.className = 'photo-widget';
+    wrap.title = 'اضغط لإضافة/تغيير الصورة';
+    function refresh(){
+      wrap.innerHTML = '';
+      if(p.photoDataUrl){
+        const img = document.createElement('img');
+        img.src = p.photoDataUrl;
+        wrap.appendChild(img);
+      } else {
+        wrap.textContent = '+';
+      }
+    }
+    refresh();
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      try{
+        const dataUrl = await resizeImageToDataUrl(file, 120);
+        p.photoDataUrl = dataUrl;
+        saveStore();
+        refresh();
+        if(document.getElementById('examsTableBody')) renderExamsBody();
+        if(document.getElementById('summaryTableBody')) renderSummaryBody();
+      }catch(err){
+        showMessage('تعذرت معالجة هذه الصورة، جرّب صورة أخرى.');
+      }
+      fileInput.value = '';
+    });
+    wrap.appendChild(fileInput);
+    wrap.addEventListener('click', () => fileInput.click());
+    return wrap;
+  }
+
+  // ---------- Participant notes ----------
+
+  function openParticipantNotes(p){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML = `
+      <h3>ملاحظة — ${escapeHtml(p.name || 'بدون اسم')}</h3>
+      <textarea id="participantNotesInput" rows="6" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;" placeholder="اكتب أي ملاحظة عن هذا المشارك..."></textarea>
+    `;
+    const textarea = box.querySelector('#participantNotesInput');
+    textarea.value = p.notes || '';
+    textarea.addEventListener('input', (e) => {
+      p.notes = e.target.value;
+      saveStoreDebounced();
+    });
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-gold';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => {
+      root.innerHTML = '';
+      renderTable();
+    });
+    actions.appendChild(closeBtn);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+    textarea.focus();
+  }
+
+  // ---------- Individual printable report ----------
+
+  function openIndividualReport(p){
+    const examTotal = computeExamTotal(p);
+    const deduction = computeTotalDeductionAllDays(p);
+    const finalOverall = computeFinalOverall(p);
+    const ceiling = Number(W().totalCourseGrade) || 0;
+    const percent = ceiling > 0 ? ((finalOverall / ceiling) * 100) : null;
+    const passed = percent != null ? (percent >= Number(W().passThreshold || 0)) : null;
+    const rankColLabels = W().columns.filter(c => c.type !== 'name').map(c => ({
+      label: c.label,
+      value: (p.extra && p.extra[c.id]) || '—'
+    }));
+
+    let examRows = '';
+    W().examColumns.forEach(col => {
+      const score = getExamColumnScore(p, col);
+      examRows += `<tr><td>${escapeHtml(col.label)}</td><td>${score}</td></tr>`;
+    });
+    if(!examRows) examRows = '<tr><td colspan="2">لا توجد اختبارات مسجلة</td></tr>';
+
+    const breakdown = getDeductionBreakdown(p);
+    let breakdownRows = '';
+    breakdown.forEach(row => {
+      breakdownRows += `<tr><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.sessionLabel)}</td><td>${escapeHtml(row.statusName)}</td><td>${row.deduction}</td></tr>`;
+    });
+    if(!breakdownRows) breakdownRows = '<tr><td colspan="4">لا يوجد أي خصم مسجل</td></tr>';
+
+    const photoHtml = p.photoDataUrl ? `<img src="${p.photoDataUrl}" style="width:80px; height:80px; border-radius:50%; object-fit:cover; border:1px solid #ddd;">` : '';
+
+    const html = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>تقرير — ${escapeHtml(p.name || '')}</title>
+<style>
+  body{ font-family:"Segoe UI", Tahoma, Arial, sans-serif; padding:24px; color:#222; }
+  h1{ text-align:center; border-bottom:3px solid #C9A84C; padding-bottom:10px; }
+  h2{ color:#a8873a; font-size:16px; margin-top:24px; }
+  table{ border-collapse:collapse; width:100%; margin-top:8px; }
+  th, td{ border:1px solid #ddd; padding:6px 10px; text-align:center; font-size:13px; }
+  th{ background:#faf8f2; }
+  .header-flex{ display:flex; align-items:center; gap:16px; justify-content:center; margin-bottom:10px; }
+  .meta{ text-align:center; color:#555; font-size:13px; margin-bottom:4px; }
+  .final-box{ text-align:center; margin-top:20px; padding:14px; border:2px solid #C9A84C; border-radius:8px; }
+  .final-box .grade{ font-size:28px; font-weight:bold; }
+  .pass{ color:#2e7d32; font-weight:bold; }
+  .fail{ color:#c62828; font-weight:bold; }
+  @media print{ body{ padding:0; } }
+</style>
+</head>
+<body>
+  <h1>تقرير فردي — ${escapeHtml(W().pageTitle || 'سجل حضور الدورة')}</h1>
+  <div class="header-flex">${photoHtml}<div>
+    <div class="meta"><strong>الاسم:</strong> ${escapeHtml(p.name || '—')}</div>
+    ${rankColLabels.map(r => `<div class="meta"><strong>${escapeHtml(r.label)}:</strong> ${escapeHtml(r.value)}</div>`).join('')}
+  </div></div>
+  <div class="meta"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')} &nbsp;|&nbsp; <strong>المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;|&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
+
+  <h2>نتائج الاختبارات</h2>
+  <table><thead><tr><th>الاختبار</th><th>الدرجة</th></tr></thead><tbody>${examRows}</tbody></table>
+
+  <h2>تفاصيل الخصم</h2>
+  <table><thead><tr><th>التاريخ</th><th>الحصة</th><th>الحالة</th><th>الخصم</th></tr></thead><tbody>${breakdownRows}</tbody></table>
+
+  <div class="final-box">
+    <div>مجموع الاختبارات: ${examTotal} &nbsp;|&nbsp; مجموع الخصم: ${deduction}</div>
+    <div class="grade">الدرجة النهائية: ${finalOverall}</div>
+    ${percent != null ? `<div>النسبة من الدرجة الكلية (${ceiling}): ${percent.toFixed(1)}%</div>` : ''}
+    ${passed != null ? `<div class="${passed ? 'pass' : 'fail'}">${passed ? 'ناجح ✓' : 'راسب ✗'}</div>` : ''}
+  </div>
+
+  <script>window.onload = function(){ window.print(); };<\/script>
+</body>
+</html>`;
+
+    const win = window.open('', '_blank');
+    if(!win){
+      showMessage('تعذر فتح نافذة التقرير — تحقق من إعدادات حظر النوافذ المنبثقة في متصفحك.');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
   function markAllPresent(sessionKey){
     const presentStatus = W().statuses.find(s => s.id === 'present') || W().statuses[0];
     if(!presentStatus) return;
@@ -1288,7 +1548,7 @@
   }
 
   function addParticipant(){
-    const p = { id: uid(), name: '', extra: {}, sessions: emptySessions(), examScores: {} };
+    const p = { id: uid(), name: '', extra: {}, sessions: emptySessions(), examScores: {}, notes: '', photoDataUrl: '' };
     W().columns.forEach(col => { if(col.type === 'text') p.extra[col.id] = ''; });
     W().examColumns.forEach(col => { p.examScores[col.id] = ''; });
     W().participants.push(p);
@@ -1727,6 +1987,49 @@
     headerRow.appendChild(makeTh('مجموع الخصم'));
     headerRow.appendChild(makeTh('الدرجة'));
     headerRow.appendChild(makeTh('النسبة من الدرجة الكلية'));
+    headerRow.appendChild(makeTh('الحالة'));
+    const reportTh = makeTh('تقرير');
+    reportTh.className = 'actions-col';
+    headerRow.appendChild(reportTh);
+  }
+
+  function renderResultsChart(percents){
+    const chartEl = document.getElementById('resultsChart');
+    if(!chartEl) return;
+    const buckets = [
+      { label: '0-59%', min: 0, max: 60, count: 0 },
+      { label: '60-69%', min: 60, max: 70, count: 0 },
+      { label: '70-79%', min: 70, max: 80, count: 0 },
+      { label: '80-89%', min: 80, max: 90, count: 0 },
+      { label: '90-100%', min: 90, max: 101, count: 0 }
+    ];
+    percents.forEach(pct => {
+      const b = buckets.find(b => pct >= b.min && pct < b.max);
+      if(b) b.count++;
+    });
+    const maxCount = Math.max(1, ...buckets.map(b => b.count));
+    chartEl.innerHTML = '';
+    if(percents.length === 0){
+      chartEl.innerHTML = '<div class="empty-note">لا توجد بيانات كافية لعرض الرسم البياني بعد (تحتاج درجة كلية للدورة أكبر من صفر).</div>';
+      return;
+    }
+    buckets.forEach(b => {
+      const wrap = document.createElement('div');
+      wrap.className = 'results-chart-bar-wrap';
+      const countEl = document.createElement('div');
+      countEl.className = 'results-chart-count';
+      countEl.textContent = b.count;
+      const bar = document.createElement('div');
+      bar.className = 'results-chart-bar';
+      bar.style.height = Math.max(2, (b.count / maxCount) * 90) + 'px';
+      const label = document.createElement('div');
+      label.className = 'results-chart-label';
+      label.textContent = b.label;
+      wrap.appendChild(countEl);
+      wrap.appendChild(bar);
+      wrap.appendChild(label);
+      chartEl.appendChild(wrap);
+    });
   }
 
   function renderSummaryBody(){
@@ -1737,6 +2040,9 @@
     const ranked = W().participants
       .map(p => ({ p, final: computeFinalOverall(p) }))
       .sort((a, b) => b.final - a.final);
+
+    const ceiling = Number(W().totalCourseGrade);
+    const percents = [];
 
     ranked.forEach((item, index) => {
       const p = item.p;
@@ -1779,12 +2085,35 @@
       tr.appendChild(tdFinal);
 
       const tdPercent = document.createElement('td');
-      const ceiling = Number(W().totalCourseGrade);
-      tdPercent.textContent = ceiling > 0 ? ((finalOverall / ceiling) * 100).toFixed(1) + '%' : '—';
+      const percent = ceiling > 0 ? ((finalOverall / ceiling) * 100) : null;
+      tdPercent.textContent = percent != null ? percent.toFixed(1) + '%' : '—';
       tr.appendChild(tdPercent);
+      if(percent != null) percents.push(percent);
+
+      const tdStatus = document.createElement('td');
+      if(percent != null){
+        const passed = percent >= Number(W().passThreshold || 0);
+        tdStatus.textContent = passed ? 'ناجح ✓' : 'راسب ✗';
+        tdStatus.style.fontWeight = 'bold';
+        tdStatus.style.color = passed ? '#2e7d32' : '#c62828';
+      } else {
+        tdStatus.textContent = '—';
+      }
+      tr.appendChild(tdStatus);
+
+      const tdReport = document.createElement('td');
+      tdReport.className = 'actions-col';
+      const reportBtn = document.createElement('button');
+      reportBtn.className = 'btn-outline btn-small';
+      reportBtn.textContent = 'تقرير';
+      reportBtn.addEventListener('click', () => openIndividualReport(p));
+      tdReport.appendChild(reportBtn);
+      tr.appendChild(tdReport);
 
       tbody.appendChild(tr);
     });
+
+    renderResultsChart(percents);
   }
 
   function openSessionManager(){
@@ -2349,6 +2678,12 @@
   });
   document.getElementById('totalCourseGradeInput').addEventListener('input', (e) => {
     W().totalCourseGrade = parseFloat(e.target.value) || 0;
+    saveStoreDebounced();
+    renderMeta();
+    renderSummaryBody();
+  });
+  document.getElementById('passThresholdInput').addEventListener('input', (e) => {
+    W().passThreshold = parseFloat(e.target.value) || 0;
     saveStoreDebounced();
     renderMeta();
     renderSummaryBody();
