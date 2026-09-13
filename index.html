@@ -602,7 +602,7 @@
     <h2>إعدادات النقاط</h2>
     <div class="base-score-row">
       <label>الدرجة الأساسية لسجل الحضور:</label>
-      <input type="number" id="baseScoreInput" value="100">
+      <input type="number" id="baseScoreInput" value="100" lang="en">
     </div>
   </div>
 
@@ -641,9 +641,9 @@
   <div class="tab-content" id="tabSummary">
     <div class="base-score-row" id="totalCourseGradeRow">
       <label>الدرجة الكلية للدورة (السقف المرجعي):</label>
-      <input type="number" id="totalCourseGradeInput" value="1000">
+      <input type="number" id="totalCourseGradeInput" value="1000" lang="en">
       <label style="margin-right:16px;">حد النجاح (%):</label>
-      <input type="number" id="passThresholdInput" value="60" min="0" max="100">
+      <input type="number" id="passThresholdInput" value="60" min="0" max="100" lang="en">
     </div>
     <p class="lock-hint" style="text-align:right; margin-bottom:10px;">الدرجة = مجموع الاختبارات + (الدرجة الأساسية لسجل الحضور − مجموع خصم الحضور من كل الأيام المحفوظة في السجل اليومي). "الدرجة الكلية للدورة" رقم مرجعي فقط تُحسب على أساسه النسبة المئوية، ولا يدخل في عملية الجمع. الترتيب من الأعلى إلى الأقل.</p>
     <div id="resultsChart" class="results-chart"></div>
@@ -1670,6 +1670,7 @@
 
       const deductInput = document.createElement('input');
       deductInput.type = 'number';
+      deductInput.lang = 'en';
       deductInput.step = '0.1';
       deductInput.value = st.deduction;
       deductInput.addEventListener('input', (e) => {
@@ -1783,6 +1784,7 @@
           tdPractical.className = 'number-cell';
           const inputPractical = document.createElement('input');
           inputPractical.type = 'number';
+          inputPractical.lang = 'en';
           inputPractical.step = '0.1';
           inputPractical.value = subVal.practical != null ? subVal.practical : '';
           inputPractical.addEventListener('input', (e) => {
@@ -1799,6 +1801,7 @@
           tdTheoretical.className = 'number-cell';
           const inputTheoretical = document.createElement('input');
           inputTheoretical.type = 'number';
+          inputTheoretical.lang = 'en';
           inputTheoretical.step = '0.1';
           inputTheoretical.value = subVal.theoretical != null ? subVal.theoretical : '';
           inputTheoretical.addEventListener('input', (e) => {
@@ -1815,6 +1818,7 @@
           td.className = 'number-cell';
           const input = document.createElement('input');
           input.type = 'number';
+          input.lang = 'en';
           input.step = '0.1';
           input.value = (p.examScores && p.examScores[col.id] != null && typeof p.examScores[col.id] !== 'object') ? p.examScores[col.id] : '';
           input.addEventListener('input', (e) => {
