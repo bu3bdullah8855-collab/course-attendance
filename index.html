@@ -381,6 +381,25 @@
     font-size:13px;
     padding:4px 0;
   }
+  .holiday-watermark{
+    position:absolute;
+    inset:0;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    pointer-events:none;
+    z-index:5;
+    text-align:center;
+    padding:20px;
+  }
+  .holiday-watermark.show{ display:flex; }
+  .holiday-watermark span{
+    font-size:clamp(20px, 5vw, 40px);
+    font-weight:bold;
+    color:rgba(180,120,0,0.18);
+    transform:rotate(-12deg);
+    white-space:nowrap;
+  }
 
   .lock-overlay{
     position:fixed; inset:0;
@@ -527,6 +546,7 @@
     .row-actions{ display:none !important; }
     .actions-col{ display:none !important; }
     .results-chart, .photo-cell{ display:none !important; }
+    .holiday-watermark{ display:none !important; }
   }
 </style>
 </head>
@@ -598,12 +618,14 @@
     <button class="btn-outline" id="printBtn">طباعة</button>
     <button class="btn-outline" id="exportCsvBtn">تصدير CSV / Excel</button>
     <button class="btn-outline" id="changePinBtn">تغيير الرقم السري</button>
+    <button class="btn-outline" id="holidayBtn">🏖️ إجازة/مناسبة اليوم</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
   </div>
 
   <div class="legend" id="legend"></div>
 
-  <div class="table-wrap">
+  <div class="table-wrap" style="position:relative;">
+    <div id="holidayWatermark" class="holiday-watermark"></div>
     <table id="mainTable">
       <thead>
         <tr id="headerRow"></tr>
@@ -738,6 +760,7 @@
       baseScore: 100,
       totalCourseGrade: 1000,
       passThreshold: 60,
+      holidayReason: "",
       alertLateCount: 3,
       alertDeductionTotal: 10,
       alertNearFailMargin: 5,
@@ -779,6 +802,7 @@
     if(w.totalCourseGrade == null) w.totalCourseGrade = 1000;
     if(w.pageTitle == null) w.pageTitle = "سجل حضور الدورة";
     if(w.passThreshold == null) w.passThreshold = 60;
+    if(w.holidayReason == null) w.holidayReason = "";
     if(w.alertLateCount == null) w.alertLateCount = 3;
     if(w.alertDeductionTotal == null) w.alertDeductionTotal = 10;
     if(w.alertNearFailMargin == null) w.alertNearFailMargin = 5;
@@ -1252,6 +1276,19 @@
     return div.innerHTML;
   }
 
+  function renderHolidayWatermark(){
+    const el = document.getElementById('holidayWatermark');
+    if(!el) return;
+    const reason = W().holidayReason;
+    if(reason){
+      el.innerHTML = `<span>${escapeHtml(reason)}</span>`;
+      el.classList.add('show');
+    } else {
+      el.innerHTML = '';
+      el.classList.remove('show');
+    }
+  }
+
   function renderMeta(){
     document.getElementById('pageTitleInput').value = W().pageTitle || "";
     document.getElementById('courseName').value = W().courseName || "";
@@ -1274,6 +1311,7 @@
       <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
       <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
     `;
+    renderHolidayWatermark();
   }
 
   function renderLegend(){
@@ -2430,6 +2468,125 @@
     root.appendChild(overlay);
   }
 
+  function ensureHolidayStatus(){
+    let st = W().statuses.find(s => s.name === 'إجازة');
+    if(!st){
+      st = { id: uid(), name: 'إجازة', color: '#00897B', deduction: 0, alertThreshold: 0 };
+      W().statuses.push(st);
+      renderStatusSettings();
+      renderLegend();
+    }
+    return st;
+  }
+
+  function openHolidayModal(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'إجازة / مناسبة لهذا اليوم';
+    box.appendChild(h3);
+
+    const reasonInput = document.createElement('input');
+    reasonInput.type = 'text';
+    reasonInput.placeholder = 'مثال: إجازة اليوم الوطني، إجازة نهاية الأسبوع...';
+    reasonInput.style.cssText = 'width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:14px; text-align:right;';
+    reasonInput.value = W().holidayReason || '';
+    reasonInput.addEventListener('input', (e) => {
+      W().holidayReason = e.target.value;
+      saveStoreDebounced();
+      renderHolidayWatermark();
+    });
+    box.appendChild(reasonInput);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn-outline btn-small';
+    clearBtn.textContent = '✕ إزالة الإجازة من هذا اليوم';
+    clearBtn.style.marginBottom = '16px';
+    clearBtn.addEventListener('click', () => {
+      W().holidayReason = '';
+      reasonInput.value = '';
+      saveStore();
+      renderHolidayWatermark();
+    });
+    box.appendChild(clearBtn);
+
+    const hint = document.createElement('p');
+    hint.className = 'lock-hint';
+    hint.style.textAlign = 'right';
+    hint.textContent = 'اختياريًا: طبّق حالة "إجازة" على حضور اليوم لكل الحصص دفعة واحدة:';
+    box.appendChild(hint);
+
+    const scopeRow = document.createElement('div');
+    scopeRow.style.cssText = 'display:flex; gap:16px; margin-bottom:10px; justify-content:center;';
+    scopeRow.innerHTML = `
+      <label style="display:flex; align-items:center; gap:5px;"><input type="radio" name="holidayScope" value="all" checked> الجميع</label>
+      <label style="display:flex; align-items:center; gap:5px;"><input type="radio" name="holidayScope" value="some"> أشخاص محددين</label>
+    `;
+    box.appendChild(scopeRow);
+
+    const peopleList = document.createElement('div');
+    peopleList.style.cssText = 'display:none; max-height:180px; overflow-y:auto; text-align:right; border:1px solid var(--border); border-radius:6px; padding:8px; margin-bottom:10px;';
+    W().participants.forEach(p => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex; align-items:center; gap:6px; padding:4px 0;';
+      label.innerHTML = `<input type="checkbox" class="holiday-person-check" value="${p.id}"> ${escapeHtml(p.name || 'بدون اسم')}`;
+      peopleList.appendChild(label);
+    });
+    box.appendChild(peopleList);
+
+    scopeRow.querySelectorAll('input[name="holidayScope"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        peopleList.style.display = (e.target.value === 'some') ? 'block' : 'none';
+      });
+    });
+
+    const applyBtn = document.createElement('button');
+    applyBtn.className = 'btn-gold';
+    applyBtn.textContent = 'تطبيق على الحضور';
+    applyBtn.style.width = '100%';
+    applyBtn.style.marginBottom = '10px';
+    applyBtn.addEventListener('click', () => {
+      const holidayStatus = ensureHolidayStatus();
+      const scope = scopeRow.querySelector('input[name="holidayScope"]:checked').value;
+      let targets;
+      if(scope === 'all'){
+        targets = W().participants;
+      } else {
+        const checkedIds = Array.from(peopleList.querySelectorAll('.holiday-person-check:checked')).map(c => c.value);
+        targets = W().participants.filter(p => checkedIds.includes(p.id));
+      }
+      if(targets.length === 0){
+        showMessage('اختر شخصًا واحدًا على الأقل، أو اختر "الجميع".');
+        return;
+      }
+      targets.forEach(p => {
+        W().sessions.forEach(sc => { p.sessions[sc.id] = holidayStatus.id; });
+      });
+      saveStore();
+      renderTable();
+      root.innerHTML = '';
+    });
+    box.appendChild(applyBtn);
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+    reasonInput.focus();
+  }
+
   function openColumnManager(){
     const root = document.getElementById('modalRoot');
     root.innerHTML = '';
@@ -2562,6 +2719,7 @@
       recordDate: W().recordDate,
       trainerName: W().trainerName,
       subject: W().subject,
+      holidayReason: W().holidayReason,
       baseScore: W().baseScore,
       statuses: deepClone(W().statuses),
       sessions: deepClone(W().sessions),
@@ -2599,6 +2757,7 @@
     W().recordDate = snapshot.recordDate || W().recordDate;
     W().trainerName = snapshot.trainerName || '';
     W().subject = snapshot.subject || '';
+    W().holidayReason = snapshot.holidayReason || '';
     // baseScore, status definitions (names/colors/deductions), and session
     // column definitions are GLOBAL settings — they always reflect your
     // current configuration and are never overwritten by viewing an older
@@ -2910,6 +3069,7 @@
     document.getElementById('statusSettingsBody').classList.toggle('open');
     document.getElementById('statusSettingsArrow').classList.toggle('open');
   });
+  document.getElementById('holidayBtn').addEventListener('click', openHolidayModal);
   document.getElementById('resetBtn').addEventListener('click', () => {
     showConfirm('سيتم حذف بيانات الجدول الحالي (المشاركون والأعمدة ومعلومات الدورة). لن يتأثر السجل اليومي المحفوظ. هل أنت متأكد؟', () => {
       store.working = defaultWorkingState();
