@@ -670,13 +670,13 @@
       </div>
       <div class="collapsible" id="alertSettingsBody">
         <div class="status-settings-row">
-          <label>عدد مرات التأخير للتنبيه:</label>
-          <input type="text" inputmode="decimal" id="alertLateCountInput" value="3" class="deduct-input">
-          <label style="margin-right:10px;">حد مجموع الخصم للتنبيه:</label>
+          <label>حد مجموع الخصم للتنبيه:</label>
           <input type="text" inputmode="decimal" id="alertDeductionInput" value="10" class="deduct-input">
           <label style="margin-right:10px;">هامش القرب من الرسوب (%):</label>
           <input type="text" inputmode="decimal" id="alertNearFailInput" value="5" class="deduct-input">
         </div>
+        <p class="lock-hint" style="text-align:right; margin:10px 0 4px 0;">التنبيه حسب عدد مرات كل حالة (اتركه فارغًا أو 0 لتعطيل التنبيه لتلك الحالة):</p>
+        <div id="alertStatusThresholds" class="status-settings-list"></div>
       </div>
     </div>
 
@@ -700,15 +700,15 @@
   "use strict";
 
   const DEFAULT_STATUSES = [
-    { id: "present",  name: "حاضر",  color: "#4CAF50", deduction: 0 },
-    { id: "absent",   name: "غائب",  color: "#E53935", deduction: 2 },
-    { id: "late",     name: "تأخير", color: "#FDD835", deduction: 0.5 },
-    { id: "clinic",   name: "عيادة", color: "#42A5F5", deduction: 0 },
-    { id: "permit",   name: "تصريح", color: "#AB47BC", deduction: 0 },
-    { id: "exam1",    name: "فحص",   color: "#26A69A", deduction: 0 },
-    { id: "test",     name: "اختبار",color: "#8D6E63", deduction: 0 },
-    { id: "task",     name: "مهمة",  color: "#FF7043", deduction: 0 },
-    { id: "other",    name: "أخرى",  color: "#9E9E9E", deduction: 0 }
+    { id: "present",  name: "حاضر",  color: "#4CAF50", deduction: 0, alertThreshold: 0 },
+    { id: "absent",   name: "غائب",  color: "#E53935", deduction: 2, alertThreshold: 0 },
+    { id: "late",     name: "تأخير", color: "#FDD835", deduction: 0.5, alertThreshold: 0 },
+    { id: "clinic",   name: "عيادة", color: "#42A5F5", deduction: 0, alertThreshold: 0 },
+    { id: "permit",   name: "تصريح", color: "#AB47BC", deduction: 0, alertThreshold: 0 },
+    { id: "exam1",    name: "فحص",   color: "#26A69A", deduction: 0, alertThreshold: 0 },
+    { id: "test",     name: "اختبار",color: "#8D6E63", deduction: 0, alertThreshold: 0 },
+    { id: "task",     name: "مهمة",  color: "#FF7043", deduction: 0, alertThreshold: 0 },
+    { id: "other",    name: "أخرى",  color: "#9E9E9E", deduction: 0, alertThreshold: 0 }
   ];
 
   const LEGACY_SESSION_KEYS = ['queue','s1','s2','s3','s4','s5','s6','s7'];
@@ -782,6 +782,9 @@
     if(w.alertLateCount == null) w.alertLateCount = 3;
     if(w.alertDeductionTotal == null) w.alertDeductionTotal = 10;
     if(w.alertNearFailMargin == null) w.alertNearFailMargin = 5;
+    if(w.statuses){
+      w.statuses.forEach(st => { if(st.alertThreshold == null) st.alertThreshold = 0; });
+    }
     if(w.participants){
       w.participants.forEach(p => {
         if(!p.examScores) p.examScores = {};
@@ -997,16 +1000,13 @@
   // List of every individual deduction a participant has, across today's
   // live entries and every saved day, with the date/session/status/amount —
   // used to show "why was I deducted" breakdown in the summary tab.
-  function countStatusOccurrencesByName(p, statusName){
+  function countStatusOccurrencesById(p, statusId){
     let count = 0;
     const todayDate = W().recordDate;
     function tally(sessionsMap){
       W().sessions.forEach(sc => {
         const sid = sessionsMap ? sessionsMap[sc.id] : null;
-        if(sid){
-          const st = getStatus(sid);
-          if(st && st.name === statusName) count++;
-        }
+        if(sid === statusId) count++;
       });
     }
     tally(p.sessions);
@@ -1024,21 +1024,22 @@
 
   function computeAlerts(){
     const alerts = [];
-    const lateThreshold = Number(W().alertLateCount) || 0;
     const deductionThreshold = Number(W().alertDeductionTotal) || 0;
     const nearFailMargin = Number(W().alertNearFailMargin) || 0;
     const passThreshold = Number(W().passThreshold) || 0;
     const ceiling = Number(W().totalCourseGrade) || 0;
+    const trackedStatuses = W().statuses.filter(st => Number(st.alertThreshold) > 0);
 
     W().participants.forEach(p => {
       const name = p.name || 'مشارك بلا اسم';
 
-      if(lateThreshold > 0){
-        const lateCount = countStatusOccurrencesByName(p, 'تأخير');
-        if(lateCount >= lateThreshold){
-          alerts.push(`⚠ ${name} وصل إلى ${lateCount} حالات تأخير`);
+      trackedStatuses.forEach(st => {
+        const threshold = Number(st.alertThreshold);
+        const count = countStatusOccurrencesById(p, st.id);
+        if(count >= threshold){
+          alerts.push(`⚠ ${name} وصل إلى ${count} حالات "${st.name}"`);
         }
-      }
+      });
 
       if(deductionThreshold > 0){
         const ded = computeTotalDeductionAllDays(p);
@@ -1057,6 +1058,34 @@
     });
 
     return alerts;
+  }
+
+  function renderAlertSettingsList(){
+    const container = document.getElementById('alertStatusThresholds');
+    if(!container) return;
+    container.innerHTML = '';
+    W().statuses.forEach(st => {
+      const row = document.createElement('div');
+      row.className = 'status-settings-row';
+      row.innerHTML = `<span class="legend-swatch" style="background:${st.color}"></span>`;
+      const label = document.createElement('span');
+      label.textContent = st.name;
+      label.style.minWidth = '70px';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.inputMode = 'decimal';
+      input.className = 'deduct-input';
+      input.placeholder = '0';
+      input.value = st.alertThreshold ? st.alertThreshold : '';
+      input.addEventListener('input', (e) => {
+        st.alertThreshold = parseFloat(e.target.value) || 0;
+        saveStoreDebounced();
+        renderAlerts();
+      });
+      row.appendChild(label);
+      row.appendChild(input);
+      container.appendChild(row);
+    });
   }
 
   function renderAlerts(){
@@ -1234,8 +1263,6 @@
     if(summaryGradeInput) summaryGradeInput.value = W().totalCourseGrade;
     const passThresholdInput = document.getElementById('passThresholdInput');
     if(passThresholdInput) passThresholdInput.value = W().passThreshold;
-    const alertLateCountInput = document.getElementById('alertLateCountInput');
-    if(alertLateCountInput) alertLateCountInput.value = W().alertLateCount;
     const alertDeductionInput = document.getElementById('alertDeductionInput');
     if(alertDeductionInput) alertDeductionInput.value = W().alertDeductionTotal;
     const alertNearFailInput = document.getElementById('alertNearFailInput');
@@ -1828,13 +1855,15 @@
       row.appendChild(delBtn);
       list.appendChild(row);
     });
+    renderAlertSettingsList();
   }
 
   function addNewStatus(){
-    W().statuses.push({ id: uid(), name: 'حالة جديدة', color: '#607D8B', deduction: 0 });
+    W().statuses.push({ id: uid(), name: 'حالة جديدة', color: '#607D8B', deduction: 0, alertThreshold: 0 });
     saveStore();
     renderStatusSettings();
     renderLegend();
+    renderAlertSettingsList();
   }
 
   // ---------- Exams tab ----------
@@ -2851,11 +2880,6 @@
     saveStoreDebounced();
     renderMeta();
     renderSummaryBody();
-  });
-  document.getElementById('alertLateCountInput').addEventListener('input', (e) => {
-    W().alertLateCount = parseFloat(e.target.value) || 0;
-    saveStoreDebounced();
-    renderAlerts();
   });
   document.getElementById('alertDeductionInput').addEventListener('input', (e) => {
     W().alertDeductionTotal = parseFloat(e.target.value) || 0;
