@@ -341,32 +341,32 @@
   .empty-note{ color:var(--muted); font-size:13px; padding:10px 0; }
   .results-chart{
     display:flex;
-    align-items:flex-end;
-    gap:10px;
-    height:140px;
+    align-items:center;
+    gap:28px;
+    flex-wrap:wrap;
     margin:16px 0 24px 0;
-    padding:10px;
+    padding:16px;
     border:1px solid var(--border);
     border-radius:8px;
     background:#fafafa;
   }
-  .results-chart-bar-wrap{
-    flex:1;
+  .results-pie{
+    width:150px;
+    height:150px;
+    border-radius:50%;
+    flex-shrink:0;
+  }
+  .results-pie-legend{
     display:flex;
     flex-direction:column;
+    gap:8px;
+    font-size:13px;
+  }
+  .results-pie-legend-item{
+    display:flex;
     align-items:center;
-    justify-content:flex-end;
-    height:100%;
+    gap:8px;
   }
-  .results-chart-count{ font-size:12px; font-weight:bold; margin-bottom:2px; }
-  .results-chart-bar{
-    width:100%;
-    max-width:44px;
-    background:var(--gold);
-    border-radius:4px 4px 0 0;
-    min-height:2px;
-  }
-  .results-chart-label{ font-size:11px; color:var(--muted); margin-top:4px; text-align:center; }
 
   .lock-overlay{
     position:fixed; inset:0;
@@ -1454,6 +1454,23 @@
 
   // ---------- Individual printable report ----------
 
+  function arabicOrdinal(n){
+    const ones = ['', 'الأول', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع'];
+    const onesConj = ['', 'الحادي', 'الثاني', 'الثالث', 'الرابع', 'الخامس', 'السادس', 'السابع', 'الثامن', 'التاسع'];
+    const tensWords = {20:'العشرون', 30:'الثلاثون', 40:'الأربعون', 50:'الخمسون', 60:'الستون', 70:'السبعون', 80:'الثمانون', 90:'التسعون'};
+    if(n <= 0) return 'غير محدد';
+    if(n <= 9) return ones[n];
+    if(n === 10) return 'العاشر';
+    if(n < 20) return onesConj[n - 10] + ' عشر';
+    if(n % 10 === 0 && tensWords[n]) return tensWords[n];
+    if(n < 100){
+      const tensBase = Math.floor(n / 10) * 10;
+      const onesDigit = n % 10;
+      if(tensWords[tensBase] && onesDigit > 0) return onesConj[onesDigit] + ' و' + tensWords[tensBase];
+    }
+    return 'المرتبة رقم ' + n;
+  }
+
   function openIndividualReport(p){
     const examTotal = computeExamTotal(p);
     const deduction = computeTotalDeductionAllDays(p);
@@ -1465,6 +1482,11 @@
       label: c.label,
       value: (p.extra && p.extra[c.id]) || '—'
     }));
+    const rankedAll = W().participants
+      .map(pp => ({ p: pp, final: computeFinalOverall(pp) }))
+      .sort((a, b) => b.final - a.final);
+    const rankIndex = rankedAll.findIndex(item => item.p.id === p.id) + 1;
+    const rankText = rankIndex > 0 ? (arabicOrdinal(rankIndex) + ' من ' + rankedAll.length) : '—';
 
     let examRows = '';
     W().examColumns.forEach(col => {
@@ -1509,8 +1531,9 @@
   <div class="header-flex">${photoHtml}<div>
     <div class="meta"><strong>الاسم:</strong> ${escapeHtml(p.name || '—')}</div>
     ${rankColLabels.map(r => `<div class="meta"><strong>${escapeHtml(r.label)}:</strong> ${escapeHtml(r.value)}</div>`).join('')}
+    <div class="meta"><strong>الترتيب:</strong> ${escapeHtml(rankText)}</div>
   </div></div>
-  <div class="meta"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')} &nbsp;|&nbsp; <strong>المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;|&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
+  <div class="meta"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
 
   <h2>نتائج الاختبارات</h2>
   <table><thead><tr><th>الاختبار</th><th>الدرجة</th></tr></thead><tbody>${examRows}</tbody></table>
@@ -1997,39 +2020,49 @@
     const chartEl = document.getElementById('resultsChart');
     if(!chartEl) return;
     const buckets = [
-      { label: '0-59%', min: 0, max: 60, count: 0 },
-      { label: '60-69%', min: 60, max: 70, count: 0 },
-      { label: '70-79%', min: 70, max: 80, count: 0 },
-      { label: '80-89%', min: 80, max: 90, count: 0 },
-      { label: '90-100%', min: 90, max: 101, count: 0 }
+      { label: '0-59%', min: 0, max: 60, count: 0, color: '#c62828' },
+      { label: '60-69%', min: 60, max: 70, count: 0, color: '#ef6c00' },
+      { label: '70-79%', min: 70, max: 80, count: 0, color: '#f9a825' },
+      { label: '80-89%', min: 80, max: 90, count: 0, color: '#7cb342' },
+      { label: '90-100%', min: 90, max: 101, count: 0, color: '#2e7d32' }
     ];
     percents.forEach(pct => {
       const b = buckets.find(b => pct >= b.min && pct < b.max);
       if(b) b.count++;
     });
-    const maxCount = Math.max(1, ...buckets.map(b => b.count));
+    const total = percents.length;
     chartEl.innerHTML = '';
-    if(percents.length === 0){
+    if(total === 0){
       chartEl.innerHTML = '<div class="empty-note">لا توجد بيانات كافية لعرض الرسم البياني بعد (تحتاج درجة كلية للدورة أكبر من صفر).</div>';
       return;
     }
+
+    let cumulative = 0;
+    const stops = [];
     buckets.forEach(b => {
-      const wrap = document.createElement('div');
-      wrap.className = 'results-chart-bar-wrap';
-      const countEl = document.createElement('div');
-      countEl.className = 'results-chart-count';
-      countEl.textContent = b.count;
-      const bar = document.createElement('div');
-      bar.className = 'results-chart-bar';
-      bar.style.height = Math.max(2, (b.count / maxCount) * 90) + 'px';
-      const label = document.createElement('div');
-      label.className = 'results-chart-label';
-      label.textContent = b.label;
-      wrap.appendChild(countEl);
-      wrap.appendChild(bar);
-      wrap.appendChild(label);
-      chartEl.appendChild(wrap);
+      if(b.count === 0) return;
+      const startPct = (cumulative / total) * 100;
+      cumulative += b.count;
+      const endPct = (cumulative / total) * 100;
+      stops.push(`${b.color} ${startPct}% ${endPct}%`);
     });
+
+    const pie = document.createElement('div');
+    pie.className = 'results-pie';
+    pie.style.background = `conic-gradient(${stops.join(', ')})`;
+
+    const legend = document.createElement('div');
+    legend.className = 'results-pie-legend';
+    buckets.forEach(b => {
+      const item = document.createElement('div');
+      item.className = 'results-pie-legend-item';
+      const pct = total > 0 ? ((b.count / total) * 100).toFixed(0) : 0;
+      item.innerHTML = `<span class="legend-swatch" style="background:${b.color}"></span> ${b.label}: ${b.count} (${pct}%)`;
+      legend.appendChild(item);
+    });
+
+    chartEl.appendChild(pie);
+    chartEl.appendChild(legend);
   }
 
   function renderSummaryBody(){
