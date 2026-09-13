@@ -618,7 +618,7 @@
     <button class="btn-outline" id="printBtn">طباعة</button>
     <button class="btn-outline" id="exportCsvBtn">تصدير CSV / Excel</button>
     <button class="btn-outline" id="changePinBtn">تغيير الرقم السري</button>
-    <button class="btn-outline" id="holidayBtn">🏖️ إجازة/مناسبة اليوم</button>
+    <button class="btn-outline" id="holidayBtn">📌 ملاحظة/مناسبة اليوم</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
   </div>
 
@@ -2468,16 +2468,6 @@
     root.appendChild(overlay);
   }
 
-  function ensureHolidayStatus(){
-    let st = W().statuses.find(s => s.name === 'إجازة');
-    if(!st){
-      st = { id: uid(), name: 'إجازة', color: '#00897B', deduction: 0, alertThreshold: 0 };
-      W().statuses.push(st);
-      renderStatusSettings();
-      renderLegend();
-    }
-    return st;
-  }
 
   function openHolidayModal(){
     const root = document.getElementById('modalRoot');
@@ -2488,7 +2478,7 @@
     box.className = 'modal-box wide';
 
     const h3 = document.createElement('h3');
-    h3.textContent = 'إجازة / مناسبة لهذا اليوم';
+    h3.textContent = 'ملاحظة / مناسبة لهذا اليوم';
     box.appendChild(h3);
 
     const reasonInput = document.createElement('input');
@@ -2505,7 +2495,7 @@
 
     const clearBtn = document.createElement('button');
     clearBtn.className = 'btn-outline btn-small';
-    clearBtn.textContent = '✕ إزالة الإجازة من هذا اليوم';
+    clearBtn.textContent = '✕ إزالة الملاحظة من هذا اليوم';
     clearBtn.style.marginBottom = '16px';
     clearBtn.addEventListener('click', () => {
       W().holidayReason = '';
@@ -2518,8 +2508,22 @@
     const hint = document.createElement('p');
     hint.className = 'lock-hint';
     hint.style.textAlign = 'right';
-    hint.textContent = 'اختياريًا: طبّق حالة "إجازة" على حضور اليوم لكل الحصص دفعة واحدة:';
+    hint.textContent = 'اختياريًا: طبّق حالة معيّنة على حضور اليوم لكل الحصص دفعة واحدة — اختر حالة موجودة، أو أنشئ حالة جديدة بنفس نص الملاحظة أعلاه:';
     box.appendChild(hint);
+
+    const statusSelect = document.createElement('select');
+    statusSelect.style.cssText = 'width:100%; padding:8px; border:1px solid var(--border); border-radius:6px; margin-bottom:10px; text-align:right;';
+    W().statuses.forEach(st => {
+      const opt = document.createElement('option');
+      opt.value = st.id;
+      opt.textContent = st.name;
+      statusSelect.appendChild(opt);
+    });
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ إنشاء حالة جديدة بنص الملاحظة أعلاه';
+    statusSelect.appendChild(newOpt);
+    box.appendChild(statusSelect);
 
     const scopeRow = document.createElement('div');
     scopeRow.style.cssText = 'display:flex; gap:16px; margin-bottom:10px; justify-content:center;';
@@ -2551,7 +2555,22 @@
     applyBtn.style.width = '100%';
     applyBtn.style.marginBottom = '10px';
     applyBtn.addEventListener('click', () => {
-      const holidayStatus = ensureHolidayStatus();
+      let statusId = statusSelect.value;
+      if(statusId === '__new__'){
+        const label = reasonInput.value.trim();
+        if(!label){
+          showMessage('اكتب نص الملاحظة أولاً في الحقل أعلاه لاستخدامه كاسم حالة جديدة.');
+          return;
+        }
+        let st = W().statuses.find(s => s.name === label);
+        if(!st){
+          st = { id: uid(), name: label, color: '#00897B', deduction: 0, alertThreshold: 0 };
+          W().statuses.push(st);
+          renderStatusSettings();
+          renderLegend();
+        }
+        statusId = st.id;
+      }
       const scope = scopeRow.querySelector('input[name="holidayScope"]:checked').value;
       let targets;
       if(scope === 'all'){
@@ -2565,7 +2584,7 @@
         return;
       }
       targets.forEach(p => {
-        W().sessions.forEach(sc => { p.sessions[sc.id] = holidayStatus.id; });
+        W().sessions.forEach(sc => { p.sessions[sc.id] = statusId; });
       });
       saveStore();
       renderTable();
