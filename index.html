@@ -2019,19 +2019,13 @@
   function renderResultsChart(percents){
     const chartEl = document.getElementById('resultsChart');
     if(!chartEl) return;
-    const bucketColors = [
-      '#8e0000', '#c62828', '#e64a19', '#ef6c00', '#f9a825',
-      '#c0ca33', '#7cb342', '#43a047', '#2e7d32', '#1b5e20'
+    const buckets = [
+      { label: '0-59%', min: 0, max: 60, count: 0, color: '#c62828' },
+      { label: '60-69%', min: 60, max: 70, count: 0, color: '#ef6c00' },
+      { label: '70-79%', min: 70, max: 80, count: 0, color: '#f9a825' },
+      { label: '80-89%', min: 80, max: 90, count: 0, color: '#7cb342' },
+      { label: '90-100%', min: 90, max: 101, count: 0, color: '#2e7d32' }
     ];
-    const buckets = [];
-    for(let i = 0; i < 10; i++){
-      const min = i * 10;
-      const max = (i === 9) ? 101 : (min + 10);
-      buckets.push({
-        label: (i === 9) ? '90-100%' : `${min}-${min + 9}%`,
-        min, max, count: 0, color: bucketColors[i]
-      });
-    }
     percents.forEach(pct => {
       const b = buckets.find(b => pct >= b.min && pct < b.max);
       if(b) b.count++;
