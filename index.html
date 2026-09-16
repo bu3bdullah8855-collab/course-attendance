@@ -104,6 +104,7 @@
   .btn-outline{background:#fff; border:1px solid var(--border); color:var(--text);}
   .btn-danger{background:#fff; border:1px solid #d9534f; color:#d9534f;}
   .btn-small{padding:4px 8px; font-size:12px;}
+  .toolbar-toggle-row{ margin-bottom:6px; }
 
   .legend{
     display:flex;
@@ -524,7 +525,7 @@
   @media print{
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
-    .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint{display:none !important;}
+    .toolbar, .toolbar-toggle-row, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint{display:none !important;}
     .incomplete-banner{ display:none !important; }
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
@@ -619,7 +620,10 @@
     </div>
   </div>
 
-  <div class="toolbar">
+  <div class="toolbar-toggle-row">
+    <button class="btn-outline btn-small" id="toolbarToggleBtn">☰ إخفاء الأدوات</button>
+  </div>
+  <div class="toolbar" id="mainToolbar">
     <button class="btn-gold" id="addParticipantBtn">+ إضافة مشارك</button>
     <button class="btn-outline" id="manageColumnsBtn">إدارة الأعمدة</button>
     <button class="btn-outline" id="manageSessionsBtn">إدارة الحصص</button>
@@ -2068,6 +2072,8 @@
       return;
     }
     const nameCol = W().columns.find(c => c.type === 'name');
+    const sigA = W().assistantSupervisor || { number:'', rank:'', name:'' };
+    const sigC = W().courseSupervisor || { number:'', rank:'', name:'' };
     let rows = '';
     W().participants.forEach((p, idx) => {
       let scoreDisplay;
@@ -2093,6 +2099,11 @@
   table{ border-collapse:collapse; width:100%; }
   th, td{ border:1px solid #ddd; padding:6px 10px; text-align:center; font-size:13px; }
   th{ background:#faf8f2; }
+  .signature-block{ display:flex; justify-content:space-between; gap:20px; margin-top:30px; page-break-inside:avoid; }
+  .signature-box{ flex:1; border:1px solid #999; border-radius:6px; padding:10px 14px; font-size:13px; }
+  .signature-box h4{ margin:0 0 8px 0; font-size:14px; text-align:center; border-bottom:1px solid #ccc; padding-bottom:6px; }
+  .signature-box .sig-row{ display:flex; justify-content:space-between; margin-bottom:16px; }
+  .signature-box .sig-line{ margin-top:22px; border-top:1px solid #666; padding-top:4px; text-align:center; }
   @media print{ body{ padding:0; } }
 </style>
 </head>
@@ -2103,6 +2114,20 @@
     <thead><tr><th>#</th><th>الاسم</th><th>${scoreHeader}</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
+  <div class="signature-block">
+    <div class="signature-box">
+      <h4>مساعد مشرف الدورة</h4>
+      <div class="sig-row"><span><strong>الرقم:</strong> ${escapeHtml(sigA.number || '—')}</span><span><strong>الرتبة:</strong> ${escapeHtml(sigA.rank || '—')}</span></div>
+      <div class="sig-row"><span><strong>الاسم:</strong> ${escapeHtml(sigA.name || '—')}</span></div>
+      <div class="sig-line">التوقيع</div>
+    </div>
+    <div class="signature-box">
+      <h4>مشرف الدورة</h4>
+      <div class="sig-row"><span><strong>الرقم:</strong> ${escapeHtml(sigC.number || '—')}</span><span><strong>الرتبة:</strong> ${escapeHtml(sigC.rank || '—')}</span></div>
+      <div class="sig-row"><span><strong>الاسم:</strong> ${escapeHtml(sigC.name || '—')}</span></div>
+      <div class="sig-line">التوقيع</div>
+    </div>
+  </div>
   <script>window.onload = function(){ window.print(); };<\/script>
 </body>
 </html>`;
@@ -3330,6 +3355,23 @@
     const sel = document.getElementById('examPrintSelect');
     printExamColumn(sel.value);
   });
+  (function initToolbarToggle(){
+    const btn = document.getElementById('toolbarToggleBtn');
+    const toolbar = document.getElementById('mainToolbar');
+    if(!btn || !toolbar) return;
+    const hidden = localStorage.getItem('attendanceToolbarHidden') === '1';
+    if(hidden){
+      toolbar.style.display = 'none';
+      btn.textContent = '☰ إظهار الأدوات';
+    }
+    btn.addEventListener('click', () => {
+      const nowHidden = toolbar.style.display !== 'none';
+      toolbar.style.display = nowHidden ? 'none' : 'flex';
+      btn.textContent = nowHidden ? '☰ إظهار الأدوات' : '☰ إخفاء الأدوات';
+      localStorage.setItem('attendanceToolbarHidden', nowHidden ? '1' : '0');
+    });
+  })();
+
   document.getElementById('signatureBtn').addEventListener('click', openSignatureModal);
   document.getElementById('holidayBtn').addEventListener('click', openHolidayModal);
   document.getElementById('clearTodayBtn').addEventListener('click', () => {
