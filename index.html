@@ -116,8 +116,36 @@
   .legend-item{display:flex; align-items:center; gap:5px;}
   .legend-swatch{width:14px; height:14px; border-radius:3px; display:inline-block; border:1px solid rgba(0,0,0,0.1);}
 
+  .quick-summary-bar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .quick-summary-badge{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    padding:5px 10px;
+    border:1px solid var(--border);
+    border-radius:20px;
+    font-size:12px;
+    background:#fff;
+  }
+  .incomplete-banner{
+    background:#fff3e0;
+    color:#8a5a00;
+    border:1px solid #ffcc80;
+    border-radius:8px;
+    padding:8px 14px;
+    font-size:13px;
+    margin-bottom:10px;
+  }
+
   .table-wrap{
     overflow-x:auto;
+    overflow-y:auto;
+    max-height:65vh;
     border:1px solid var(--border);
     border-radius:8px;
   }
@@ -137,6 +165,7 @@
     background:#faf8f2;
     position:sticky;
     top:0;
+    z-index:6;
     font-size:12px;
   }
   th .session-header{
@@ -512,8 +541,14 @@
     @page{ size: landscape; margin: 8mm; }
     body{background:#fff; padding:0; font-size:11px;}
     .toolbar, .section, .meta-info, .lock-overlay, #syncNote, .tab-nav, .lock-hint{display:none !important;}
+    .quick-summary-bar, .incomplete-banner{ display:none !important; }
     .print-only{ display:block !important; margin-bottom:12px; }
     .print-only .print-meta-row{ font-size:13px; margin-bottom:3px; }
+    #printSignatureBlock{ display:flex !important; justify-content:space-between; gap:20px; margin-top:24px; page-break-inside:avoid; }
+    .signature-box{ flex:1; border:1px solid #999; border-radius:6px; padding:10px 14px; font-size:13px; }
+    .signature-box h4{ margin:0 0 8px 0; font-size:14px; text-align:center; border-bottom:1px solid #ccc; padding-bottom:6px; }
+    .signature-box .sig-row{ display:flex; justify-content:space-between; margin-bottom:16px; }
+    .signature-box .sig-line{ margin-top:22px; border-top:1px solid #666; padding-top:4px; text-align:center; }
     .container{box-shadow:none; padding:0; max-width:none;}
     .text-cell input{ display:none !important; }
     .cell-print-text{
@@ -529,7 +564,7 @@
     h1{ font-size:18px; margin-bottom:8px; padding-bottom:6px; }
     .page-title-input{ font-size:18px; margin-bottom:8px; padding-bottom:6px; pointer-events:none; }
     .legend{ font-size:11px; margin-bottom:8px; }
-    .table-wrap{ overflow:visible !important; border:none; }
+    .table-wrap{ overflow:visible !important; max-height:none !important; border:none; }
     table{
       min-width:0 !important;
       width:100% !important;
@@ -618,9 +653,14 @@
     <button class="btn-outline" id="printBtn">طباعة</button>
     <button class="btn-outline" id="exportCsvBtn">تصدير CSV / Excel</button>
     <button class="btn-outline" id="changePinBtn">تغيير الرقم السري</button>
+    <button class="btn-outline" id="signatureBtn">✍ توقيع واعتماد</button>
     <button class="btn-outline" id="holidayBtn">📌 ملاحظة/مناسبة اليوم</button>
+    <button class="btn-danger" id="clearTodayBtn">🔄 تصفير حالات اليوم</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
   </div>
+
+  <div id="quickSummaryBar" class="quick-summary-bar"></div>
+  <div id="incompleteDayBanner" class="incomplete-banner" style="display:none;"></div>
 
   <div class="legend" id="legend"></div>
 
@@ -633,6 +673,8 @@
       <tbody id="tableBody"></tbody>
     </table>
   </div>
+
+  <div class="print-only" id="printSignatureBlock"></div>
 
   <div class="section">
     <h2>إعدادات النقاط</h2>
@@ -661,6 +703,8 @@
   <div class="tab-content" id="tabExams">
     <div class="toolbar">
       <button class="btn-outline" id="manageExamColumnsBtn">إدارة أعمدة الاختبارات</button>
+      <select id="examPrintSelect" style="padding:8px; border:1px solid var(--border); border-radius:6px;"></select>
+      <button class="btn-outline" id="printExamColumnBtn">🖨 طباعة نتائج هذه المادة</button>
     </div>
     <p class="lock-hint" style="text-align:right; margin-bottom:10px;">أسماء المشاركين هنا مرتبطة تلقائيًا بجدول "سجل الحضور" — أضف أو احذف مشاركًا من هناك.</p>
     <div class="table-wrap">
@@ -761,6 +805,8 @@
       totalCourseGrade: 1000,
       passThreshold: 60,
       holidayReason: "",
+      assistantSupervisor: { number: "", rank: "", name: "" },
+      courseSupervisor: { number: "", rank: "", name: "" },
       alertLateCount: 3,
       alertDeductionTotal: 10,
       alertNearFailMargin: 5,
@@ -809,6 +855,14 @@
     if(w.statuses){
       w.statuses.forEach(st => { if(st.alertThreshold == null) st.alertThreshold = 0; });
     }
+    if(w.sessions){
+      w.sessions.forEach(sc => {
+        if(sc.trainer == null) sc.trainer = "";
+        if(sc.subject == null) sc.subject = "";
+      });
+    }
+    if(!w.assistantSupervisor) w.assistantSupervisor = { number: "", rank: "", name: "" };
+    if(!w.courseSupervisor) w.courseSupervisor = { number: "", rank: "", name: "" };
     if(w.participants){
       w.participants.forEach(p => {
         if(!p.examScores) p.examScores = {};
@@ -1289,6 +1343,83 @@
     }
   }
 
+  function renderSignatureBlock(){
+    const el = document.getElementById('printSignatureBlock');
+    if(!el) return;
+    const a = W().assistantSupervisor || { number:'', rank:'', name:'' };
+    const c = W().courseSupervisor || { number:'', rank:'', name:'' };
+    el.innerHTML = `
+      <div class="signature-box">
+        <h4>مساعد مشرف الدورة</h4>
+        <div class="sig-row"><span><strong>الرقم:</strong> ${escapeHtml(a.number || '—')}</span><span><strong>الرتبة:</strong> ${escapeHtml(a.rank || '—')}</span></div>
+        <div class="sig-row"><span><strong>الاسم:</strong> ${escapeHtml(a.name || '—')}</span></div>
+        <div class="sig-line">التوقيع</div>
+      </div>
+      <div class="signature-box">
+        <h4>مشرف الدورة</h4>
+        <div class="sig-row"><span><strong>الرقم:</strong> ${escapeHtml(c.number || '—')}</span><span><strong>الرتبة:</strong> ${escapeHtml(c.rank || '—')}</span></div>
+        <div class="sig-row"><span><strong>الاسم:</strong> ${escapeHtml(c.name || '—')}</span></div>
+        <div class="sig-line">التوقيع</div>
+      </div>
+    `;
+  }
+
+  function openSignatureModal(){
+    const root = document.getElementById('modalRoot');
+    root.innerHTML = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box wide';
+
+    const h3 = document.createElement('h3');
+    h3.textContent = 'بيانات التوقيع والاعتماد (تظهر عند الطباعة فقط، والتوقيع الفعلي يُكتب باليد بعد الطباعة)';
+    box.appendChild(h3);
+
+    function makeSection(title, key){
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:14px;';
+      const h4 = document.createElement('h4');
+      h4.textContent = title;
+      h4.style.margin = '0 0 8px 0';
+      wrap.appendChild(h4);
+
+      const row = document.createElement('div');
+      row.className = 'status-settings-row';
+
+      ['number','rank','name'].forEach(field => {
+        const labelMap = { number: 'الرقم', rank: 'الرتبة', name: 'الاسم' };
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = labelMap[field];
+        input.value = W()[key][field] || '';
+        input.addEventListener('input', (e) => {
+          W()[key][field] = e.target.value;
+          saveStoreDebounced();
+          renderSignatureBlock();
+        });
+        row.appendChild(input);
+      });
+      wrap.appendChild(row);
+      return wrap;
+    }
+
+    box.appendChild(makeSection('مساعد مشرف الدورة', 'assistantSupervisor'));
+    box.appendChild(makeSection('مشرف الدورة', 'courseSupervisor'));
+
+    const closeRow = document.createElement('div');
+    closeRow.className = 'modal-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn-outline';
+    closeBtn.textContent = 'إغلاق';
+    closeBtn.addEventListener('click', () => { root.innerHTML = ''; });
+    closeRow.appendChild(closeBtn);
+    box.appendChild(closeRow);
+
+    overlay.appendChild(box);
+    root.appendChild(overlay);
+  }
+
   function renderMeta(){
     document.getElementById('pageTitleInput').value = W().pageTitle || "";
     document.getElementById('courseName').value = W().courseName || "";
@@ -1306,12 +1437,18 @@
     if(alertNearFailInput) alertNearFailInput.value = W().alertNearFailMargin;
 
     const printMeta = document.getElementById('printMeta');
+    const perSessionTrainers = W().sessions.filter(sc => sc.trainer || sc.subject);
+    const multiTrainerLine = perSessionTrainers.length
+      ? `<div class="print-meta-row"><strong>توزيع المدربين على الحصص:</strong> ${perSessionTrainers.map(sc => `${escapeHtml(sc.label)}: ${escapeHtml([sc.trainer, sc.subject].filter(Boolean).join(' - ') || '—')}`).join(' &nbsp;|&nbsp; ')}</div>`
+      : '';
     printMeta.innerHTML = `
       <div class="print-meta-row"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
       <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
       <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
+      ${multiTrainerLine}
     `;
     renderHolidayWatermark();
+    renderSignatureBlock();
   }
 
   function renderLegend(){
@@ -1350,8 +1487,18 @@
       const th = document.createElement('th');
       const wrap = document.createElement('div');
       wrap.className = 'session-header';
+      const tipParts = [];
+      if(sc.trainer) tipParts.push(`المدرب: ${sc.trainer}`);
+      if(sc.subject) tipParts.push(`الموضوع: ${sc.subject}`);
+      if(tipParts.length) th.title = tipParts.join(' | ');
       const label = document.createElement('span');
       label.textContent = sc.label;
+      let trainerTag = null;
+      if(sc.trainer || sc.subject){
+        trainerTag = document.createElement('span');
+        trainerTag.style.cssText = 'font-size:9px; color:#777; font-weight:normal; white-space:normal; max-width:80px;';
+        trainerTag.textContent = [sc.trainer, sc.subject].filter(Boolean).join(' - ');
+      }
       const timeInput = document.createElement('input');
       timeInput.type = 'text';
       timeInput.className = 'session-time-input';
@@ -1368,6 +1515,7 @@
       btn.style.padding = '3px 6px';
       btn.addEventListener('click', () => markAllPresent(sc.id));
       wrap.appendChild(label);
+      if(trainerTag) wrap.appendChild(trainerTag);
       wrap.appendChild(timeInput);
       wrap.appendChild(btn);
       th.appendChild(wrap);
@@ -1514,6 +1662,44 @@
 
     if(document.getElementById('examsTableBody')) renderExamsBody();
     if(document.getElementById('summaryTableBody')) renderSummaryBody();
+    renderIncompleteDayBanner();
+    renderQuickSummaryBar();
+  }
+
+  function renderIncompleteDayBanner(){
+    const el = document.getElementById('incompleteDayBanner');
+    if(!el) return;
+    let incompleteCount = 0;
+    W().participants.forEach(p => {
+      const hasEmpty = W().sessions.some(sc => !p.sessions || p.sessions[sc.id] == null || p.sessions[sc.id] === '');
+      if(hasEmpty) incompleteCount++;
+    });
+    if(incompleteCount > 0){
+      el.style.display = 'block';
+      el.textContent = `⚠ يوجد ${incompleteCount} مشارك لم تُسجَّل حالته بالكامل في كل الحصص لهذا اليوم.`;
+    } else {
+      el.style.display = 'none';
+      el.textContent = '';
+    }
+  }
+
+  function renderQuickSummaryBar(){
+    const el = document.getElementById('quickSummaryBar');
+    if(!el) return;
+    const counts = {};
+    W().statuses.forEach(st => { counts[st.id] = 0; });
+    W().participants.forEach(p => {
+      W().sessions.forEach(sc => {
+        const sid = p.sessions ? p.sessions[sc.id] : null;
+        if(sid && counts[sid] != null) counts[sid]++;
+      });
+    });
+    el.innerHTML = W().statuses.map(st => `
+      <span class="quick-summary-badge" style="border-color:${st.color};">
+        <span class="legend-swatch" style="background:${st.color};"></span>
+        ${escapeHtml(st.name)}: ${counts[st.id] || 0}
+      </span>
+    `).join('');
   }
 
   function reorderByDrag(sourceId, targetId){
@@ -1906,6 +2092,82 @@
 
   // ---------- Exams tab ----------
 
+  function renderExamPrintSelect(){
+    const sel = document.getElementById('examPrintSelect');
+    if(!sel) return;
+    const prevValue = sel.value;
+    sel.innerHTML = '';
+    if(W().examColumns.length === 0){
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'لا توجد أعمدة اختبارات بعد';
+      sel.appendChild(opt);
+      return;
+    }
+    W().examColumns.forEach(col => {
+      const opt = document.createElement('option');
+      opt.value = col.id;
+      opt.textContent = col.label;
+      sel.appendChild(opt);
+    });
+    if(prevValue && W().examColumns.some(c => c.id === prevValue)) sel.value = prevValue;
+  }
+
+  function printExamColumn(colId){
+    const col = W().examColumns.find(c => c.id === colId);
+    if(!col){
+      showMessage('اختر مادة اختبار أولًا.');
+      return;
+    }
+    const nameCol = W().columns.find(c => c.type === 'name');
+    let rows = '';
+    W().participants.forEach((p, idx) => {
+      let scoreDisplay;
+      if(col.split){
+        const sv = (p.examScores && p.examScores[col.id] && typeof p.examScores[col.id] === 'object') ? p.examScores[col.id] : { practical:'', theoretical:'' };
+        scoreDisplay = `${sv.practical || 0} / ${sv.theoretical || 0}`;
+      } else {
+        scoreDisplay = (p.examScores && p.examScores[col.id] != null && p.examScores[col.id] !== '') ? p.examScores[col.id] : '—';
+      }
+      rows += `<tr><td>${idx+1}</td><td style="text-align:right;">${escapeHtml(p.name || '')}</td><td>${escapeHtml(String(scoreDisplay))}</td></tr>`;
+    });
+    const scoreHeader = col.split ? 'الدرجة (عملي / نظري)' : 'الدرجة';
+    const html = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>نتائج ${escapeHtml(col.label)}</title>
+<style>
+  body{ font-family:"Segoe UI", Tahoma, Arial, sans-serif; padding:24px; color:#222; }
+  h1{ text-align:center; border-bottom:3px solid #C9A84C; padding-bottom:10px; }
+  .meta{ text-align:center; color:#555; font-size:13px; margin-bottom:14px; }
+  table{ border-collapse:collapse; width:100%; }
+  th, td{ border:1px solid #ddd; padding:6px 10px; text-align:center; font-size:13px; }
+  th{ background:#faf8f2; }
+  @media print{ body{ padding:0; } }
+</style>
+</head>
+<body>
+  <h1>نتائج اختبار: ${escapeHtml(col.label)}</h1>
+  <div class="meta"><strong>الدورة:</strong> ${escapeHtml(W().courseName || '—')} &nbsp;|&nbsp; <strong>التاريخ:</strong> ${escapeHtml(W().recordDate || '—')}</div>
+  <table>
+    <thead><tr><th>#</th><th>الاسم</th><th>${scoreHeader}</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <script>window.onload = function(){ window.print(); };<\/script>
+</body>
+</html>`;
+    const win = window.open('', '_blank');
+    if(!win){
+      showMessage('تعذر فتح نافذة الطباعة — تحقق من إعدادات حظر النوافذ المنبثقة في متصفحك.');
+      return;
+    }
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+  }
+
   function renderExamsHeader(){
     const headerRow = document.getElementById('examsHeaderRow');
     const headerRow2 = document.getElementById('examsHeaderRow2');
@@ -1944,6 +2206,7 @@
     const thTotal = makeTh('مجموع الاختبارات');
     thTotal.rowSpan = 2;
     headerRow.appendChild(thTotal);
+    renderExamPrintSelect();
   }
 
   function renderExamsBody(){
@@ -2359,6 +2622,12 @@
     h3.textContent = 'إدارة الحصص';
     box.appendChild(h3);
 
+    const hint = document.createElement('p');
+    hint.className = 'lock-hint';
+    hint.style.textAlign = 'right';
+    hint.textContent = 'يمكنك تحديد مدرب وموضوع مختلف لكل حصة على حدة عند وجود أكثر من مدرب في نفس اليوم.';
+    box.appendChild(hint);
+
     const list = document.createElement('div');
     list.className = 'column-list';
     box.appendChild(list);
@@ -2372,8 +2641,31 @@
         const nameInput = document.createElement('input');
         nameInput.type = 'text';
         nameInput.value = sc.label;
+        nameInput.style.minWidth = '90px';
         nameInput.addEventListener('input', (e) => {
           sc.label = e.target.value;
+          saveStoreDebounced();
+          renderHeader();
+        });
+
+        const trainerInput = document.createElement('input');
+        trainerInput.type = 'text';
+        trainerInput.placeholder = 'المدرب لهذه الحصة';
+        trainerInput.value = sc.trainer || '';
+        trainerInput.style.minWidth = '110px';
+        trainerInput.addEventListener('input', (e) => {
+          sc.trainer = e.target.value;
+          saveStoreDebounced();
+          renderHeader();
+        });
+
+        const subjectInput = document.createElement('input');
+        subjectInput.type = 'text';
+        subjectInput.placeholder = 'الموضوع لهذه الحصة';
+        subjectInput.value = sc.subject || '';
+        subjectInput.style.minWidth = '110px';
+        subjectInput.addEventListener('input', (e) => {
+          sc.subject = e.target.value;
           saveStoreDebounced();
           renderHeader();
         });
@@ -2417,6 +2709,8 @@
         });
 
         row.appendChild(nameInput);
+        row.appendChild(trainerInput);
+        row.appendChild(subjectInput);
         row.appendChild(upBtn);
         row.appendChild(downBtn);
         row.appendChild(delBtn);
@@ -2441,7 +2735,7 @@
         setTimeout(() => { addInput.style.borderColor = ''; }, 1200);
         return;
       }
-      const newSession = { id: uid(), label: label, time: '' };
+      const newSession = { id: uid(), label: label, time: '', trainer: '', subject: '' };
       W().sessions.push(newSession);
       W().participants.forEach(p => { if(!p.sessions) p.sessions = {}; p.sessions[newSession.id] = null; });
       saveStore();
@@ -3088,7 +3382,23 @@
     document.getElementById('statusSettingsBody').classList.toggle('open');
     document.getElementById('statusSettingsArrow').classList.toggle('open');
   });
+  document.getElementById('printExamColumnBtn').addEventListener('click', () => {
+    const sel = document.getElementById('examPrintSelect');
+    printExamColumn(sel.value);
+  });
+  document.getElementById('signatureBtn').addEventListener('click', openSignatureModal);
   document.getElementById('holidayBtn').addEventListener('click', openHolidayModal);
+  document.getElementById('clearTodayBtn').addEventListener('click', () => {
+    showConfirm('سيتم تفريغ حالات الحضور (الحاضر/الغائب/تأخير...) لكل المشاركين في هذا اليوم فقط، ليصبح الجدول فارغًا لتبدأ التسجيل من جديد. لن يتأثر أي يوم آخر محفوظ، ولن يُحذف أي مشارك أو اختبار أو عمود. هل أنت متأكد؟', () => {
+      W().participants.forEach(p => {
+        W().sessions.forEach(sc => { p.sessions[sc.id] = null; });
+      });
+      W().holidayReason = '';
+      saveStore();
+      renderTable();
+    });
+  });
+
   document.getElementById('resetBtn').addEventListener('click', () => {
     showConfirm('سيتم حذف بيانات الجدول الحالي (المشاركون والأعمدة ومعلومات الدورة). لن يتأثر السجل اليومي المحفوظ. هل أنت متأكد؟', () => {
       store.working = defaultWorkingState();
