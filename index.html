@@ -617,14 +617,6 @@
       <label>تاريخ السجل</label>
       <input type="date" id="recordDate">
     </div>
-    <div class="field">
-      <label>اسم المدرب</label>
-      <input type="text" id="trainerName" placeholder="اسم المدرب">
-    </div>
-    <div class="field">
-      <label>الموضوع</label>
-      <input type="text" id="courseSubject" placeholder="الموضوع">
-    </div>
   </div>
 
   <div class="toolbar">
@@ -1407,8 +1399,6 @@
     document.getElementById('pageTitleInput').value = W().pageTitle || "";
     document.getElementById('courseName').value = W().courseName || "";
     document.getElementById('recordDate').value = W().recordDate || "";
-    document.getElementById('trainerName').value = W().trainerName || "";
-    document.getElementById('courseSubject').value = W().subject || "";
     document.getElementById('baseScoreInput').value = W().baseScore;
     const summaryGradeInput = document.getElementById('totalCourseGradeInput');
     if(summaryGradeInput) summaryGradeInput.value = W().totalCourseGrade;
@@ -1420,15 +1410,9 @@
     if(alertNearFailInput) alertNearFailInput.value = W().alertNearFailMargin;
 
     const printMeta = document.getElementById('printMeta');
-    const perSessionTrainers = W().sessions.filter(sc => sc.trainer || sc.subject);
-    const multiTrainerLine = perSessionTrainers.length
-      ? `<div class="print-meta-row"><strong>توزيع المدربين على الحصص:</strong> ${perSessionTrainers.map(sc => `${escapeHtml(sc.label)}: ${escapeHtml([sc.trainer, sc.subject].filter(Boolean).join(' - ') || '—')}`).join(' &nbsp;|&nbsp; ')}</div>`
-      : '';
     printMeta.innerHTML = `
       <div class="print-meta-row"><strong>اسم الدورة:</strong> ${escapeHtml(W().courseName || '—')}</div>
       <div class="print-meta-row"><strong>تاريخ السجل:</strong> ${escapeHtml(W().recordDate || '—')}</div>
-      <div class="print-meta-row"><strong>اسم المدرب:</strong> ${escapeHtml(W().trainerName || '—')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>الموضوع:</strong> ${escapeHtml(W().subject || '—')}</div>
-      ${multiTrainerLine}
     `;
     renderHolidayWatermark();
     renderSignatureBlock();
@@ -3196,8 +3180,6 @@
     const rows = [];
     rows.push(['اسم الدورة', W().courseName || '']);
     rows.push(['تاريخ السجل', W().recordDate || '']);
-    rows.push(['اسم المدرب', W().trainerName || '']);
-    rows.push(['الموضوع', W().subject || '']);
     rows.push(['الدرجة الأساسية', W().baseScore]);
     rows.push([]);
 
@@ -3297,8 +3279,6 @@
   document.getElementById('pageTitleInput').addEventListener('input', (e) => { W().pageTitle = e.target.value; saveStoreDebounced(); });
   document.getElementById('courseName').addEventListener('input', (e) => { W().courseName = e.target.value; saveStoreDebounced(); renderMeta(); });
   document.getElementById('recordDate').addEventListener('input', (e) => { W().recordDate = e.target.value; saveStore(); renderMeta(); });
-  document.getElementById('trainerName').addEventListener('input', (e) => { W().trainerName = e.target.value; saveStoreDebounced(); renderMeta(); });
-  document.getElementById('courseSubject').addEventListener('input', (e) => { W().subject = e.target.value; saveStoreDebounced(); renderMeta(); });
   document.getElementById('baseScoreInput').addEventListener('input', (e) => {
     W().baseScore = parseFloat(e.target.value) || 0;
     saveStoreDebounced();
