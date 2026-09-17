@@ -104,7 +104,7 @@
   .btn-outline{background:#fff; border:1px solid var(--border); color:var(--text);}
   .btn-danger{background:#fff; border:1px solid #d9534f; color:#d9534f;}
   .btn-small{padding:4px 8px; font-size:12px;}
-  .toolbar-toggle-row{ margin-bottom:6px; }
+  .toolbar-toggle-row{ margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 
   .legend{
     display:flex;
@@ -622,6 +622,7 @@
 
   <div class="toolbar-toggle-row">
     <button class="btn-outline btn-small" id="toolbarToggleBtn">☰ إخفاء الأدوات</button>
+    <button class="btn-outline btn-small" id="undoBtn" style="display:none; border-color:#2e7d32; color:#2e7d32;"></button>
   </div>
   <div class="toolbar" id="mainToolbar">
     <button class="btn-gold" id="addParticipantBtn">+ إضافة مشارك</button>
@@ -637,7 +638,6 @@
     <button class="btn-outline" id="holidayBtn">📌 ملاحظة/مناسبة اليوم</button>
     <button class="btn-danger" id="clearTodayBtn">🔄 تصفير حالات اليوم</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
-    <button class="btn-outline" id="undoBtn" style="display:none; border-color:#2e7d32; color:#2e7d32;"></button>
   </div>
 
   <div id="incompleteDayBanner" class="incomplete-banner" style="display:none;"></div>
