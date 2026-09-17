@@ -904,75 +904,73 @@
     });
   }
 
-  async function fetchRow(){
-    const { data, error } = await supabaseClient
-      .from('attendance_app_state')
-      .select('data, pin_hash')
-      .eq('id', ROW_ID)
-      .single();
-    if(error) throw error;
+  async function callApi(action, payload){
+    const { data, error } = await supabaseClient.functions.invoke('attendance-api', {
+      body: { action, ...(payload || {}) }
+    });
+    if(error){
+      let serverMsg = '';
+      try{
+        if(error.context && typeof error.context.json === 'function'){
+          const j = await error.context.json();
+          serverMsg = j && j.error;
+        }
+      }catch(e){}
+      const err = new Error(serverMsg || error.message || 'خطأ في الاتصال بالخادم');
+      err.code = serverMsg || '';
+      throw err;
+    }
+    if(data && data.error){
+      const err = new Error(data.error);
+      err.code = data.error;
+      throw err;
+    }
     return data;
   }
 
-  async function pushPinHashToCloud(hash){
-    const { error } = await supabaseClient
-      .from('attendance_app_state')
-      .update({ pin_hash: hash })
-      .eq('id', ROW_ID);
-    if(error) throw error;
+  async function checkPinExists(){
+    const res = await callApi('check_pin_exists');
+    return !!(res && res.exists);
+  }
+
+  async function setupPinCloud(hash){
+    await callApi('setup_pin', { pinHash: hash });
+  }
+
+  async function verifyPinCloud(hash){
+    const res = await callApi('verify_pin', { pinHash: hash });
+    return !!(res && res.valid);
+  }
+
+  async function changePinCloud(currentHash, newHash){
+    await callApi('change_pin', { currentPinHash: currentHash, newPinHash: newHash });
   }
 
   // ---------- Courses (multiple independent attendance sheets) ----------
 
   async function fetchCourseList(){
-    const { data, error } = await supabaseClient
-      .from('attendance_courses')
-      .select('id, name, updated_at')
-      .order('updated_at', { ascending: false });
-    if(error) throw error;
-    return data || [];
+    const res = await callApi('list_courses', { pinHash: currentPinHash });
+    return (res && res.courses) || [];
   }
 
   async function fetchCourseData(id){
-    const { data, error } = await supabaseClient
-      .from('attendance_courses')
-      .select('data')
-      .eq('id', id)
-      .single();
-    if(error) throw error;
-    return data ? data.data : null;
+    const res = await callApi('get_course', { pinHash: currentPinHash, id });
+    return res ? res.data : null;
   }
 
   async function pushCourseData(id, storeObj){
-    const { error } = await supabaseClient
-      .from('attendance_courses')
-      .update({
-        data: storeObj,
-        name: (storeObj.working && storeObj.working.courseName) || 'دورة بدون اسم',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
-    if(error) throw error;
+    await callApi('save_course', { pinHash: currentPinHash, id, data: storeObj });
   }
 
   async function createCourseRow(name){
     const initialStorage = defaultStorage();
     initialStorage.working.courseName = name;
-    const { data, error } = await supabaseClient
-      .from('attendance_courses')
-      .insert({ name: name, data: initialStorage })
-      .select('id')
-      .single();
-    if(error) throw error;
-    return data.id;
+    const res = await callApi('create_course', { pinHash: currentPinHash, name, initialData: initialStorage });
+    return res.id;
   }
 
   async function deleteCourseRow(id){
-    const { error } = await supabaseClient
-      .from('attendance_courses')
-      .delete()
-      .eq('id', id);
-    if(error) throw error;
+    await callApi('delete_course', { pinHash: currentPinHash, id });
   }
 
   async function sha256Hex(text){
@@ -3500,7 +3498,7 @@
     renderAll();
   }
 
-  function renderEnterPinScreen(storedHash){
+  function renderEnterPinScreen(){
     setLockSubtitle('أدخل الرقم السري المكوّن من 4 أرقام');
     const body = document.getElementById('lockBody');
     body.innerHTML = `
@@ -3517,8 +3515,15 @@
         return;
       }
       const hash = await sha256Hex(val);
-      if(hash === storedHash){
-        currentPinHash = storedHash;
+      let valid;
+      try{
+        valid = await verifyPinCloud(hash);
+      }catch(err){
+        errorEl.textContent = 'تعذر التحقق - تحقق من اتصال الإنترنت.';
+        return;
+      }
+      if(valid){
+        currentPinHash = hash;
         document.getElementById('lockScreen').style.display = 'none';
         showCoursesDashboard();
       } else {
@@ -3558,7 +3563,7 @@
       }
       const hash = await sha256Hex(p1);
       try{
-        await pushPinHashToCloud(hash);
+        await setupPinCloud(hash);
       }catch(err){
         errorEl.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت.';
         return;
@@ -3587,19 +3592,19 @@
   async function initLock(){
     setLockSubtitle('جاري الاتصال...');
     document.getElementById('lockBody').innerHTML = '';
-    let row;
+    let exists;
     try{
-      row = await fetchRow();
+      exists = await checkPinExists();
     }catch(err){
-      const detail = (err && (err.message || err.error_description || err.details)) || JSON.stringify(err);
+      const detail = (err && err.message) || JSON.stringify(err);
       console.error('Supabase connection error:', detail, err);
       renderConnectionError(detail);
       return;
     }
-    if(!row || !row.pin_hash){
+    if(!exists){
       renderSetupPinScreen();
     } else {
-      renderEnterPinScreen(row.pin_hash);
+      renderEnterPinScreen();
     }
   }
 
@@ -3842,9 +3847,8 @@
       const p1 = document.getElementById('newPinInput2').value.trim();
       const p2 = document.getElementById('confirmPinInput2').value.trim();
       const errorEl = document.getElementById('changePinError');
-      const curHash = await sha256Hex(cur);
-      if(curHash !== currentPinHash){
-        errorEl.textContent = 'الرقم السري الحالي غير صحيح.';
+      if(!/^\d{4}$/.test(cur)){
+        errorEl.textContent = 'الرجاء إدخال الرقم السري الحالي.';
         return;
       }
       if(!/^\d{4}$/.test(p1)){
@@ -3855,11 +3859,12 @@
         errorEl.textContent = 'الرقمان الجديدان غير متطابقين.';
         return;
       }
+      const curHash = await sha256Hex(cur);
       const newHash = await sha256Hex(p1);
       try{
-        await pushPinHashToCloud(newHash);
+        await changePinCloud(curHash, newHash);
       }catch(err){
-        errorEl.textContent = 'تعذر الحفظ - تحقق من اتصال الإنترنت.';
+        errorEl.textContent = (err && err.code === 'PIN_INVALID') ? 'الرقم السري الحالي غير صحيح.' : 'تعذر الحفظ - تحقق من اتصال الإنترنت.';
         return;
       }
       currentPinHash = newHash;
