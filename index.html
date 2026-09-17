@@ -581,7 +581,7 @@
 </div>
 
 <div class="container" id="coursesDashboard" style="display:none;">
-  <h1>دوراتك</h1>
+  <h1>الدورات</h1>
   <div class="toolbar">
     <button class="btn-gold" id="createCourseBtn">+ إنشاء دورة جديدة</button>
     <button class="btn-outline" id="refreshCoursesBtn">تحديث القائمة</button>
@@ -815,6 +815,7 @@
 
   function backfillWorking(w){
     if(!w.examColumns) w.examColumns = [];
+    w.examColumns.forEach(col => { if(col.maxScore == null) col.maxScore = 100; });
     if(!w.sessions){
       w.sessions = LEGACY_SESSION_KEYS.map(k => ({
         id: k,
@@ -2074,16 +2075,38 @@
     const nameCol = W().columns.find(c => c.type === 'name');
     const sigA = W().assistantSupervisor || { number:'', rank:'', name:'' };
     const sigC = W().courseSupervisor || { number:'', rank:'', name:'' };
-    let rows = '';
-    W().participants.forEach((p, idx) => {
-      let scoreDisplay;
+    const maxScore = Number(col.maxScore) || 0;
+    const passThreshold = Number(W().passThreshold) || 0;
+
+    const scored = W().participants.map(p => {
+      let numericScore = 0;
+      let display = '—';
       if(col.split){
         const sv = (p.examScores && p.examScores[col.id] && typeof p.examScores[col.id] === 'object') ? p.examScores[col.id] : { practical:'', theoretical:'' };
-        scoreDisplay = `${sv.practical || 0} / ${sv.theoretical || 0}`;
+        numericScore = (Number(sv.practical) || 0) + (Number(sv.theoretical) || 0);
+        display = `${sv.practical || 0} / ${sv.theoretical || 0}`;
       } else {
-        scoreDisplay = (p.examScores && p.examScores[col.id] != null && p.examScores[col.id] !== '') ? p.examScores[col.id] : '—';
+        const raw = (p.examScores && p.examScores[col.id] != null && p.examScores[col.id] !== '') ? p.examScores[col.id] : 0;
+        numericScore = Number(raw) || 0;
+        display = (p.examScores && p.examScores[col.id] != null && p.examScores[col.id] !== '') ? String(p.examScores[col.id]) : '—';
       }
-      rows += `<tr><td>${idx+1}</td><td style="text-align:right;">${escapeHtml(p.name || '')}</td><td>${escapeHtml(String(scoreDisplay))}</td></tr>`;
+      const percent = maxScore > 0 ? (numericScore / maxScore) * 100 : 0;
+      const passed = maxScore > 0 && percent >= passThreshold;
+      return { name: p.name || '', numericScore, display, percent, passed };
+    });
+    scored.sort((a, b) => b.numericScore - a.numericScore);
+
+    let rows = '';
+    scored.forEach((s, idx) => {
+      const resultLabel = maxScore > 0 ? (s.passed ? '✓ ناجح' : '✗ راسب') : '—';
+      const resultColor = maxScore > 0 ? (s.passed ? '#2e7d32' : '#c62828') : '#555';
+      rows += `<tr>
+        <td>${idx+1}</td>
+        <td style="text-align:right;">${escapeHtml(s.name)}</td>
+        <td>${escapeHtml(s.display)}</td>
+        <td>${maxScore > 0 ? s.percent.toFixed(1) + '%' : '—'}</td>
+        <td style="color:${resultColor}; font-weight:bold;">${resultLabel}</td>
+      </tr>`;
     });
     const scoreHeader = col.split ? 'الدرجة (عملي / نظري)' : 'الدرجة';
     const html = `
@@ -2109,9 +2132,9 @@
 </head>
 <body>
   <h1>نتائج اختبار: ${escapeHtml(col.label)}</h1>
-  <div class="meta"><strong>الدورة:</strong> ${escapeHtml(W().courseName || '—')} &nbsp;|&nbsp; <strong>التاريخ:</strong> ${escapeHtml(W().recordDate || '—')}</div>
+  <div class="meta"><strong>الدورة:</strong> ${escapeHtml(W().courseName || '—')} &nbsp;|&nbsp; <strong>التاريخ:</strong> ${escapeHtml(W().recordDate || '—')} &nbsp;|&nbsp; <strong>الدرجة الكلية للاختبار:</strong> ${maxScore || '—'}</div>
   <table>
-    <thead><tr><th>#</th><th>الاسم</th><th>${scoreHeader}</th></tr></thead>
+    <thead><tr><th>#</th><th>الاسم</th><th>${scoreHeader}</th><th>النسبة</th><th>النتيجة</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <div class="signature-block">
@@ -2160,7 +2183,8 @@
     });
 
     W().examColumns.forEach(col => {
-      const th = makeTh(col.label);
+      const labelWithMax = col.maxScore ? `${col.label} (من ${col.maxScore})` : col.label;
+      const th = makeTh(labelWithMax);
       if(col.split){
         th.colSpan = 2;
         headerRow.appendChild(th);
@@ -2340,6 +2364,20 @@
         splitLabel.appendChild(splitCheckbox);
         splitLabel.appendChild(document.createTextNode('تقسيم إلى عملي / نظري'));
 
+        const maxScoreLabel = document.createElement('label');
+        maxScoreLabel.style.cssText = 'display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted);';
+        maxScoreLabel.appendChild(document.createTextNode('الدرجة الكلية:'));
+        const maxScoreInput = document.createElement('input');
+        maxScoreInput.type = 'text';
+        maxScoreInput.inputMode = 'decimal';
+        maxScoreInput.className = 'deduct-input';
+        maxScoreInput.value = col.maxScore != null ? col.maxScore : 100;
+        maxScoreInput.addEventListener('input', (e) => {
+          col.maxScore = parseFloat(e.target.value) || 0;
+          saveStoreDebounced();
+        });
+        maxScoreLabel.appendChild(maxScoreInput);
+
         const upBtn = document.createElement('button');
         upBtn.className = 'btn-outline btn-small';
         upBtn.textContent = '→ تقديم';
@@ -2376,6 +2414,7 @@
 
         row.appendChild(nameInput);
         row.appendChild(splitLabel);
+        row.appendChild(maxScoreLabel);
         row.appendChild(upBtn);
         row.appendChild(downBtn);
         row.appendChild(delBtn);
@@ -2400,7 +2439,7 @@
         setTimeout(() => { addInput.style.borderColor = ''; }, 1200);
         return;
       }
-      const newCol = { id: uid(), label: label, deletable: true, split: false };
+      const newCol = { id: uid(), label: label, deletable: true, split: false, maxScore: 100 };
       W().examColumns.push(newCol);
       W().participants.forEach(p => { if(!p.examScores) p.examScores = {}; p.examScores[newCol.id] = ''; });
       saveStore();
