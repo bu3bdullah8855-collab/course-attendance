@@ -637,6 +637,7 @@
     <button class="btn-outline" id="holidayBtn">📌 ملاحظة/مناسبة اليوم</button>
     <button class="btn-danger" id="clearTodayBtn">🔄 تصفير حالات اليوم</button>
     <button class="btn-danger" id="resetBtn">إعادة تعيين</button>
+    <button class="btn-outline" id="undoBtn" style="display:none; border-color:#2e7d32; color:#2e7d32;"></button>
   </div>
 
   <div id="incompleteDayBanner" class="incomplete-banner" style="display:none;"></div>
@@ -871,6 +872,37 @@
   let store = null;
   let currentPinHash = null;
   let currentCourseId = null;
+  let undoSnapshot = null;
+  let undoLabel = '';
+
+  function saveUndoSnapshot(label){
+    undoSnapshot = deepClone(store);
+    undoLabel = label;
+    renderUndoButton();
+  }
+
+  function renderUndoButton(){
+    const btn = document.getElementById('undoBtn');
+    if(!btn) return;
+    if(undoSnapshot){
+      btn.style.display = 'inline-block';
+      btn.textContent = `↩ تراجع عن: ${undoLabel}`;
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function performUndo(){
+    if(!undoSnapshot) return;
+    showConfirm(`هل تريد التراجع عن آخر إجراء (${undoLabel}) واستعادة الوضع السابق؟`, () => {
+      store = deepClone(undoSnapshot);
+      undoSnapshot = null;
+      undoLabel = '';
+      saveStore();
+      renderAll();
+      renderUndoButton();
+    });
+  }
 
   async function fetchRow(){
     const { data, error } = await supabaseClient
@@ -1677,6 +1709,7 @@
 
   function deleteParticipant(id){
     showConfirm('هل أنت متأكد من حذف هذا المشارك؟', () => {
+      saveUndoSnapshot('حذف مشارك');
       W().participants = W().participants.filter(p => p.id !== id);
       saveStore();
       renderTable();
@@ -3415,6 +3448,7 @@
   document.getElementById('holidayBtn').addEventListener('click', openHolidayModal);
   document.getElementById('clearTodayBtn').addEventListener('click', () => {
     showConfirm('سيتم تفريغ حالات الحضور (الحاضر/الغائب/تأخير...) لكل المشاركين في هذا اليوم فقط، ليصبح الجدول فارغًا لتبدأ التسجيل من جديد. لن يتأثر أي يوم آخر محفوظ، ولن يُحذف أي مشارك أو اختبار أو عمود. هل أنت متأكد؟', () => {
+      saveUndoSnapshot('تصفير حالات اليوم');
       W().participants.forEach(p => {
         W().sessions.forEach(sc => { p.sessions[sc.id] = null; });
       });
@@ -3426,11 +3460,14 @@
 
   document.getElementById('resetBtn').addEventListener('click', () => {
     showConfirm('سيتم حذف بيانات الجدول الحالي (المشاركون والأعمدة ومعلومات الدورة). لن يتأثر السجل اليومي المحفوظ. هل أنت متأكد؟', () => {
+      saveUndoSnapshot('إعادة تعيين الدورة');
       store.working = defaultWorkingState();
       saveStore();
       renderAll();
     });
   });
+
+  document.getElementById('undoBtn').addEventListener('click', performUndo);
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -3445,6 +3482,7 @@
     renderMeta();
     renderLegend();
     renderHeader();
+    renderUndoButton();
     renderStatusSettings();
     renderTable();
   }
@@ -3637,6 +3675,8 @@
     setCoursesSyncNote('');
     store = normalizeStore(data || {});
     currentCourseId = id;
+    undoSnapshot = null;
+    undoLabel = '';
     showUnlockedApp();
   }
 
@@ -3647,6 +3687,8 @@
     }
     currentCourseId = null;
     store = null;
+    undoSnapshot = null;
+    undoLabel = '';
     document.getElementById('appContainer').style.display = 'none';
     showCoursesDashboard();
   }
